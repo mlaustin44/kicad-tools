@@ -7,6 +7,7 @@ from .bom import generate_bom
 from .config import load_config, ConfigError, Config
 from .gerbers import export_gerbers
 from .kicad_cli import check_version, KicadCliError
+from .render3d import render_pcb
 from .schematic import export_schematic_pdf
 from .utils import check_no_locks, scaffold_output_dir, output_dir_for, PreflightError
 
@@ -50,6 +51,11 @@ def step_bom(cfg: Config, *, verbose: bool) -> StepResult:
     return StepResult(name="bom", artifacts=[bom_csv], warnings=warnings)
 
 
+def step_render(cfg: Config, *, verbose: bool) -> StepResult:
+    pngs, warnings = render_pcb(cfg, verbose=verbose)
+    return StepResult(name="render", artifacts=pngs, warnings=warnings)
+
+
 def _stub(name: str):
     def fn(cfg: Config, *, verbose: bool) -> StepResult:
         print(f"[stub] {name} not implemented yet")
@@ -62,7 +68,7 @@ STEPS = {
     "schematic": step_schematic,
     "bom": step_bom,
     "gerbers": step_gerbers,
-    "render": _stub("render"),
+    "render": step_render,
     "fab-drawing": _stub("fab-drawing"),
     "assembly-drawing": _stub("assembly-drawing"),
 }
