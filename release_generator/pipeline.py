@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+from .assembly_drawing import compose_assembly_drawing
 from .bom import generate_bom
 from .config import load_config, ConfigError, Config
 from .fab_drawing import compose_fab_drawing
@@ -62,6 +63,12 @@ def step_fab_drawing(cfg: Config, *, verbose: bool) -> StepResult:
     return StepResult(name="fab-drawing", artifacts=[pdf], warnings=warnings)
 
 
+def step_assembly_drawing(cfg: Config, *, verbose: bool) -> StepResult:
+    pdf, warnings = compose_assembly_drawing(cfg, verbose=verbose)
+    return StepResult(name="assembly-drawing", artifacts=[pdf],
+                      warnings=warnings)
+
+
 def _stub(name: str):
     def fn(cfg: Config, *, verbose: bool) -> StepResult:
         print(f"[stub] {name} not implemented yet")
@@ -76,7 +83,7 @@ STEPS = {
     "gerbers": step_gerbers,
     "render": step_render,
     "fab-drawing": step_fab_drawing,
-    "assembly-drawing": _stub("assembly-drawing"),
+    "assembly-drawing": step_assembly_drawing,
 }
 
 
