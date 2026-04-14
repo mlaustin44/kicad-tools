@@ -7,17 +7,17 @@
   <line x1="177" y1="195" x2="287" y2="195" stroke="black" stroke-width="0.25"/>
   <line x1="220" y1="170" x2="220" y2="183" stroke="black" stroke-width="0.25"/>
   <line x1="262" y1="188" x2="262" y2="195" stroke="black" stroke-width="0.25"/>
-  <text x="180" y="174" font-family="Liberation Sans Narrow" font-size="1.5" font-weight="bold">{{CONFIDENTIALITY}}</text>
-  <text x="180" y="178" font-family="Liberation Sans Narrow" font-size="1.5">{{DRAWN_BY}}</text>
-  <text x="180" y="182" font-family="Liberation Sans Narrow" font-size="1.5" font-weight="bold">{{COMPANY}}</text>
-  <text x="180" y="187" font-family="Liberation Sans Narrow" font-size="1.5" font-weight="bold">File:</text>
-  <text x="188" y="187" font-family="Liberation Sans Narrow" font-size="1.5">{{FILENAME}}</text>
-  <text x="180" y="193" font-family="Liberation Sans Narrow" font-size="1.5" font-weight="bold">Title:</text>
-  <text x="192" y="193" font-family="Liberation Sans Narrow" font-size="2.0" font-weight="bold">{{TITLE}}</text>
-  <text x="264" y="191" font-family="Liberation Sans Narrow" font-size="1.5" font-weight="bold">Rev:</text>
-  <text x="272" y="193" font-family="Liberation Sans Narrow" font-size="2.0" font-weight="bold">{{REV}}</text>
-  <text x="180" y="199" font-family="Liberation Sans Narrow" font-size="1.5" font-weight="bold">Size:</text>
-  <text x="188" y="199" font-family="Liberation Sans Narrow" font-size="1.5">A4</text>
-  <text x="210" y="199" font-family="Liberation Sans Narrow" font-size="1.5" font-weight="bold">Date:</text>
-  <text x="220" y="199" font-family="Liberation Sans Narrow" font-size="1.5">{{DATE}}</text>
+  <text x="180" y="174" font-family="Liberation Sans Narrow" font-size="2.2" font-weight="bold">{{CONFIDENTIALITY}}</text>
+  <text x="180" y="177.5" font-family="Liberation Sans Narrow" font-size="2.2">{{DRAWN_BY}}</text>
+  <text x="180" y="181.2" font-family="Liberation Sans Narrow" font-size="2.5" font-weight="bold">{{COMPANY}}</text>
+  <text x="180" y="186.5" font-family="Liberation Sans Narrow" font-size="2.0" font-weight="bold">File:</text>
+  <text x="188" y="186.5" font-family="Liberation Sans Narrow" font-size="2.5">{{FILENAME}}</text>
+  <text x="180" y="193" font-family="Liberation Sans Narrow" font-size="2.0" font-weight="bold">Title:</text>
+  <text x="192" y="193.5" font-family="Liberation Sans Narrow" font-size="4.0" font-weight="bold">{{TITLE}}</text>
+  <text x="264" y="191" font-family="Liberation Sans Narrow" font-size="2.0" font-weight="bold">Rev:</text>
+  <text x="272" y="193.5" font-family="Liberation Sans Narrow" font-size="4.0" font-weight="bold">{{REV}}</text>
+  <text x="180" y="198.5" font-family="Liberation Sans Narrow" font-size="2.0" font-weight="bold">Size:</text>
+  <text x="188" y="198.5" font-family="Liberation Sans Narrow" font-size="2.5">A4</text>
+  <text x="210" y="198.5" font-family="Liberation Sans Narrow" font-size="2.0" font-weight="bold">Date:</text>
+  <text x="220" y="198.5" font-family="Liberation Sans Narrow" font-size="2.5">{{DATE}}</text>
 </svg>

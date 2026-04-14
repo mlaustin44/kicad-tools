@@ -111,12 +111,18 @@ def _build_text_vars(cfg: Config, drawing_title: str,
 
 def _wrap_in_region(content: etree._Element, region: Region,
                     content_width: float, content_height: float,
-                    *, padding: float = 0.0) -> etree._Element:
+                    *, padding: float = 0.0,
+                    vertical_anchor: str = "center") -> etree._Element:
     """Wrap content element in a <g> that translates+scales it to fit region.
 
-    Aspect-preserving fit. Content is centered in the region. ``padding`` is
-    an inset fraction (0.0–1.0) applied on all sides; e.g. padding=0.05 makes
-    the content fill 90% of the region (5% margin each side).
+    Aspect-preserving fit. Content is horizontally centered in the region.
+    ``padding`` is an inset fraction (0.0–1.0) applied on all sides; e.g.
+    padding=0.05 makes the content fill 90% of the region (5% margin each side).
+
+    ``vertical_anchor`` controls vertical placement:
+      - "center" (default): content vertically centered in the region
+      - "top": content biased to the top with ``padding * region.height`` inset
+      - "bottom": content biased to the bottom with ``padding * region.height`` inset
     """
     if content_width <= 0 or content_height <= 0:
         scale = 1.0
@@ -127,7 +133,12 @@ def _wrap_in_region(content: etree._Element, region: Region,
     rendered_w = content_width * scale
     rendered_h = content_height * scale
     tx = region.x + (region.width - rendered_w) / 2
-    ty = region.y + (region.height - rendered_h) / 2
+    if vertical_anchor == "top":
+        ty = region.y + padding * region.height
+    elif vertical_anchor == "bottom":
+        ty = region.y + region.height - rendered_h - padding * region.height
+    else:
+        ty = region.y + (region.height - rendered_h) / 2
     g = etree.Element(f"{{{SVG_NS}}}g")
     g.set("transform", f"translate({tx} {ty}) scale({scale})")
     g.append(content)
@@ -360,17 +371,30 @@ def _build_stackup_table(board: BoardInfo) -> tuple[etree._Element, float, float
 
 # --- Notes ------------------------------------------------------------------
 
-def _build_notes_list(notes: list[str]) -> etree._Element:
+NOTES_TITLE_SIZE = 2.5      # Bold header above the numbered notes.
+NOTES_TITLE_GAP = 2.0       # mm — vertical gap between header baseline and note #1.
+
+
+def _build_notes_list(notes: list[str], *,
+                      title: str | None = None) -> etree._Element:
     """Build a numbered list of notes as text elements.
 
-    Rendered in the body "data" typography (FONT_STACK_MONO at BODY_SIZE) so
-    notes match the values in the board-characteristics table rather than
-    standing out in their own style.
+    The numbered body is rendered in the "data" typography (FONT_STACK_MONO at
+    BODY_SIZE) so notes match the values in the board-characteristics table.
+    If ``title`` is given, it is rendered above the list as a bold header in
+    the label font (FONT_STACK) at NOTES_TITLE_SIZE, followed by a small gap.
     """
     g = etree.Element(f"{{{SVG_NS}}}g")
     row_h = BODY_SIZE * 1.7
+    if title:
+        _text(g, 0, NOTES_TITLE_SIZE, title,
+              size=NOTES_TITLE_SIZE, weight="bold", family=FONT_STACK,
+              letter_spacing="0.04em")
+        offset = NOTES_TITLE_SIZE + NOTES_TITLE_GAP
+    else:
+        offset = 0.0
     for i, note in enumerate(notes, start=1):
-        y = (i + 0.5) * row_h
+        y = offset + (i + 0.5) * row_h
         _text(g, 0, y, f"{i}.",
               size=BODY_SIZE, weight="bold", family=FONT_STACK_MONO)
         _text(g, 4.5, y, note,
@@ -466,11 +490,16 @@ def compose_fab_drawing(cfg: Config, *, verbose: bool) -> tuple[Path, list[str]]
 
     # 8. Place fab notes.
     if "fab-notes" in regions and cfg.fab_drawing.notes:
-        content = _build_notes_list(cfg.fab_drawing.notes)
-        notes_h = max(1, len(cfg.fab_drawing.notes)) * BODY_SIZE * 1.7 + BODY_SIZE
+        content = _build_notes_list(cfg.fab_drawing.notes,
+                                    title="FABRICATION NOTES")
+        notes_h = (NOTES_TITLE_SIZE + NOTES_TITLE_GAP
+                   + max(1, len(cfg.fab_drawing.notes)) * BODY_SIZE * 1.7
+                   + BODY_SIZE)
         tpl.replace_region("fab-notes",
                            _wrap_in_region(content, regions["fab-notes"],
-                                           90, notes_h))
+                                           90, notes_h,
+                                           padding=0.05,
+                                           vertical_anchor="top"))
 
     # 9. Write SVG, convert to PDF.
     final_svg = scratch / "fab-drawing.svg"
