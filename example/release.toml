@@ -1,7 +1,8 @@
 [project]
 name = "Example PCB"
 version = "1.0"
-date = "auto"
+# Specific ISO date is normal usage; "auto" is also supported (today's date).
+date = "2025-01-01"
 pcb_file = "./example.kicad_pcb"
 schematic_file = "./example.kicad_sch"
 

@@ -7,7 +7,6 @@ fab and assembly drawings share a single visual language.
 """
 from __future__ import annotations
 import base64
-import datetime
 import re
 import shutil
 import subprocess
@@ -92,9 +91,7 @@ def _build_text_vars(cfg: Config, drawing_title: str,
                      page: str = "Page 1 of 1") -> dict[str, str]:
     vars_ = {
         "TITLE": drawing_title,
-        "DATE": (cfg.project.date
-                 if cfg.project.date != "auto"
-                 else datetime.date.today().isoformat()),
+        "DATE": cfg.project.date,
         "REV": cfg.project.version,
         "DRAWN_BY": cfg.titleblock.drawn_by,
         "COMPANY": cfg.titleblock.company,
@@ -372,7 +369,7 @@ def _build_stackup_table(board: BoardInfo) -> tuple[etree._Element, float, float
 # --- Notes ------------------------------------------------------------------
 
 NOTES_TITLE_SIZE = 2.5      # Bold header above the numbered notes.
-NOTES_TITLE_GAP = 2.0       # mm — vertical gap between header baseline and note #1.
+NOTES_TITLE_GAP = 0.5       # mm — vertical gap between header baseline and note #1.
 
 
 def _build_notes_list(notes: list[str], *,
