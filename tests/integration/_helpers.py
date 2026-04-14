@@ -23,8 +23,6 @@ def _default_tables(pcb_name: str, sch_name: str) -> dict[str, dict]:
             "title": "Fab Drawing",
             "page_size": "A4",
             "notes": [],
-            "include_3d_render": False,
-            "render_view": "top",
         },
         "assembly_drawing": {
             "title": "Assembly Drawing",
@@ -32,6 +30,8 @@ def _default_tables(pcb_name: str, sch_name: str) -> dict[str, dict]:
             "notes": [],
             "layers_front": ["F.Fab", "Edge.Cuts"],
             "layers_back": ["B.Fab", "Edge.Cuts"],
+            "include_3d_render": False,
+            "render_view": "top",
         },
         "bom": {
             "group_by": ["value"],

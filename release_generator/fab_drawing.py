@@ -1,5 +1,5 @@
-"""Compose the fab drawing: title block + board view + drill table + stackup +
-notes + optional 3D render."""
+"""Compose the fab drawing: title block + board view + drill map + stackup +
+notes."""
 from __future__ import annotations
 import base64
 import datetime
@@ -11,17 +11,12 @@ from lxml import etree
 from .board_introspect import BoardInfo, parse_board
 from .config import Config
 from .kicad_cli import run as kicad_run
-from .render3d import render_pcb
 from .svg_template import Region, SVG_NS, SvgTemplate
 from .svg_to_pdf import convert as svg_to_pdf
 from .utils import output_dir_for, scratch_dir_for
 
 NSMAP = {"svg": SVG_NS}
 XLINK_NS = "http://www.w3.org/1999/xlink"
-
-# Render resolution (px) — keep in sync with render3d.render_pcb args.
-RENDER_PX_W = 1600
-RENDER_PX_H = 1200
 
 _LEADING_NUMBER_RE = re.compile(r"^\s*([0-9]+(?:\.[0-9]+)?)")
 
@@ -112,27 +107,6 @@ def _load_svg_inner(svg_path: Path) -> tuple[etree._Element, float, float]:
     return g, width, height
 
 
-def _build_drill_table(board: BoardInfo) -> etree._Element:
-    """Build a simple drill-info <g>.
-
-    Drill specifics live in the drill-report.txt that ships with the gerber
-    bundle; we just reference it here to keep the drawing clean.
-    """
-    g = etree.Element(f"{{{SVG_NS}}}g")
-    header = etree.SubElement(g, f"{{{SVG_NS}}}text",
-                              attrib={"x": "0", "y": "0",
-                                      "font-size": "3",
-                                      "font-weight": "bold",
-                                      "font-family": "monospace"})
-    header.text = "DRILL TABLE"
-    note = etree.SubElement(g, f"{{{SVG_NS}}}text",
-                            attrib={"x": "0", "y": "5",
-                                    "font-size": "2.5",
-                                    "font-family": "monospace"})
-    note.text = "See drill-report.txt in gerber bundle"
-    return g
-
-
 def _build_stackup_table(board: BoardInfo) -> etree._Element:
     """Build a vertically stacked text table of the stackup layers."""
     g = etree.Element(f"{{{SVG_NS}}}g")
@@ -205,11 +179,13 @@ def compose_fab_drawing(cfg: Config, *, verbose: bool) -> tuple[Path, list[str]]
                "--mode-single",
                "--exclude-drawing-sheet"], verbose=verbose)
 
-    # 2. Render 3D PNG(s) if enabled.
-    pngs: list[Path] = []
-    if cfg.fab_drawing.include_3d_render:
-        pngs, w = render_pcb(cfg, verbose=verbose)
-        warnings.extend(w)
+    # 2. Generate drill map SVG via kicad-cli.
+    drill_dir = scratch / "drill_map"
+    drill_dir.mkdir(parents=True, exist_ok=True)
+    kicad_run(["pcb", "export", "drill", str(cfg.project.pcb_file),
+               "-o", str(drill_dir) + "/",
+               "--generate-map", "--map-format", "svg"], verbose=verbose)
+    drill_map_svg = drill_dir / f"{cfg.project.pcb_file.stem}-drl_map.svg"
 
     # 3. Parse board for stackup.
     board = parse_board(cfg.project.pcb_file)
@@ -219,8 +195,7 @@ def compose_fab_drawing(cfg: Config, *, verbose: bool) -> tuple[Path, list[str]]
     tpl.substitute_text(_build_text_vars(cfg, cfg.fab_drawing.title))
 
     # 5. Find regions.
-    region_ids = ["board-view", "drill-table", "stackup-table",
-                  "fab-notes", "render-3d"]
+    region_ids = ["board-view", "drill-map", "stackup-table", "fab-notes"]
     regions = tpl.find_regions(region_ids)
     for needed in region_ids:
         if needed not in regions:
@@ -233,12 +208,16 @@ def compose_fab_drawing(cfg: Config, *, verbose: bool) -> tuple[Path, list[str]]
         tpl.replace_region("board-view",
                            _wrap_in_region(g, regions["board-view"], bw, bh))
 
-    # 7. Place drill table.
-    if "drill-table" in regions:
-        content = _build_drill_table(board)
-        tpl.replace_region("drill-table",
-                           _wrap_in_region(content, regions["drill-table"],
-                                           80, 30))
+    # 7. Place drill map (KiCad-generated SVG with board outline + table).
+    if "drill-map" in regions:
+        if drill_map_svg.exists():
+            g, dw, dh = _load_svg_inner(drill_map_svg)
+            tpl.replace_region("drill-map",
+                               _wrap_in_region(g, regions["drill-map"],
+                                               dw, dh))
+        else:
+            warnings.append(
+                f"drill map SVG not found at {drill_map_svg}; skipping")
 
     # 8. Place stackup table.
     if "stackup-table" in regions:
@@ -256,32 +235,7 @@ def compose_fab_drawing(cfg: Config, *, verbose: bool) -> tuple[Path, list[str]]
                            _wrap_in_region(content, regions["fab-notes"],
                                            80, notes_h))
 
-    # 10. Place 3D render(s).
-    if "render-3d" in regions and pngs:
-        if len(pngs) == 2:
-            # "both" mode: split the region horizontally for top + bottom.
-            r = regions["render-3d"]
-            half_w = r.width / 2
-            for idx, png in enumerate(pngs):
-                sub_region = Region(id=f"render-half-{idx}",
-                                    x=r.x + idx * half_w, y=r.y,
-                                    width=half_w, height=r.height)
-                img = _build_image_element(png, RENDER_PX_W, RENDER_PX_H)
-                wrapper = _wrap_in_region(img, sub_region,
-                                          RENDER_PX_W, RENDER_PX_H)
-                tpl.tree.append(wrapper)
-            # Remove the original region rect so it doesn't linger.
-            for rect in tpl.tree.iter(f"{{{SVG_NS}}}rect"):
-                if rect.get("id") == "render-3d":
-                    rect.getparent().remove(rect)
-                    break
-        else:
-            img = _build_image_element(pngs[0], RENDER_PX_W, RENDER_PX_H)
-            tpl.replace_region("render-3d",
-                               _wrap_in_region(img, regions["render-3d"],
-                                               RENDER_PX_W, RENDER_PX_H))
-
-    # 11. Write SVG, convert to PDF.
+    # 10. Write SVG, convert to PDF.
     final_svg = scratch / "fab-drawing.svg"
     final_svg.write_bytes(tpl.serialize())
     final_pdf = out / "fab-drawing.pdf"

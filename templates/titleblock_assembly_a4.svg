@@ -20,7 +20,8 @@
   <text x="188" y="199" font-family="Liberation Sans Narrow" font-size="1.5">A4</text>
   <text x="210" y="199" font-family="Liberation Sans Narrow" font-size="1.5" font-weight="bold">Date:</text>
   <text x="220" y="199" font-family="Liberation Sans Narrow" font-size="1.5">{{DATE}}</text>
-  <rect x="15" y="15" width="130" height="140" fill="none" stroke="none" id="front-view"/>
-  <rect x="150" y="15" width="130" height="140" fill="none" stroke="none" id="back-view"/>
-  <rect x="15" y="160" width="160" height="35" fill="none" stroke="none" id="assembly-notes"/>
+  <rect x="15" y="15" width="130" height="100" fill="none" stroke="none" id="front-view"/>
+  <rect x="150" y="15" width="130" height="100" fill="none" stroke="none" id="back-view"/>
+  <rect x="15" y="125" width="130" height="60" fill="none" stroke="none" id="render-3d"/>
+  <rect x="150" y="125" width="135" height="60" fill="none" stroke="none" id="assembly-notes"/>
 </svg>

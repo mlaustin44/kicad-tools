@@ -6,13 +6,20 @@ from release_generator.__main__ import main
 from ._helpers import write_test_config
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-TEMPLATE = REPO_ROOT / "templates" / "titleblock_a4.svg"
+FAB_TEMPLATE = REPO_ROOT / "templates" / "titleblock_fab_a4.svg"
+ASM_TEMPLATE = REPO_ROOT / "templates" / "titleblock_assembly_a4.svg"
 
 
 def test_full_pipeline_against_real_project(kicad_project, tmp_path, capsys):
-    cfg_path = write_test_config(tmp_path, kicad_project)
+    cfg_path = write_test_config(
+        tmp_path, kicad_project,
+        tables={"assembly_drawing": {"template": "tb_asm.svg"}},
+    )
     proj_dir = cfg_path.parent
-    shutil.copy(TEMPLATE, proj_dir / "tb.svg")
+    # tb.svg is the default titleblock (used by fab_drawing); tb_asm.svg is
+    # used by assembly_drawing per the override above.
+    shutil.copy(FAB_TEMPLATE, proj_dir / "tb.svg")
+    shutil.copy(ASM_TEMPLATE, proj_dir / "tb_asm.svg")
     # include_3d_render = False is the helper default; that keeps the test snappy.
 
     rc = main(["--config", str(cfg_path)])

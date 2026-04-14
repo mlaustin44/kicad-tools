@@ -35,8 +35,6 @@ def write_minimal_config(tmp_path: Path, **overrides) -> Path:
         title = "Fab Drawing"
         page_size = "A4"
         notes = ["Note 1"]
-        include_3d_render = true
-        render_view = "{overrides.get('render_view', 'top')}"
 
         [assembly_drawing]
         title = "Assembly Drawing"
@@ -44,6 +42,8 @@ def write_minimal_config(tmp_path: Path, **overrides) -> Path:
         notes = ["Note 1"]
         layers_front = ["F.Fab", "Edge.Cuts"]
         layers_back = ["B.Fab", "Edge.Cuts"]
+        include_3d_render = true
+        render_view = "{overrides.get('render_view', 'top')}"
 
         [bom]
         group_by = ["value"]

@@ -10,7 +10,7 @@ def test_render_top_only(kicad_project, tmp_path):
     # Enable 3D render via the tables override
     cfg_path = write_test_config(
         tmp_path, kicad_project,
-        tables={"fab_drawing": {"include_3d_render": True}},
+        tables={"assembly_drawing": {"include_3d_render": True}},
     )
     cfg = load_config(cfg_path)
     scaffold_output_dir(cfg)

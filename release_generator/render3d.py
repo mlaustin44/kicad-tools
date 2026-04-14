@@ -8,13 +8,13 @@ from .utils import scratch_dir_for
 
 def render_pcb(cfg: Config, *, verbose: bool) -> tuple[list[Path], list[str]]:
     """Returns (list of PNG paths, warnings). Skips entirely if 3D render disabled."""
-    if not cfg.fab_drawing.include_3d_render:
-        return [], ["3D render disabled in [fab_drawing].include_3d_render"]
+    if not cfg.assembly_drawing.include_3d_render:
+        return [], ["3D render disabled in [assembly_drawing].include_3d_render"]
 
     out_dir = scratch_dir_for(cfg)
     out_dir.mkdir(parents=True, exist_ok=True)
-    sides = ["top", "bottom"] if cfg.fab_drawing.render_view == "both" \
-            else [cfg.fab_drawing.render_view]
+    sides = ["top", "bottom"] if cfg.assembly_drawing.render_view == "both" \
+            else [cfg.assembly_drawing.render_view]
     pngs: list[Path] = []
     for side in sides:
         png = out_dir / f"render-3d-{side}.png"

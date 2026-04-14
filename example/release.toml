@@ -30,8 +30,6 @@ notes = [
     "SILKSCREEN NOT TO COVER ANY PORTION OF EXPOSED COPPER.",
     "A CERTIFICATE OF CONFORMANCE SHALL BE PROVIDED WITH EACH PCB.",
 ]
-include_3d_render = true
-render_view = "top"
 
 [assembly_drawing]
 title = "Assembly Drawing"
@@ -45,6 +43,8 @@ notes = [
 ]
 layers_front = ["F.Fab", "F.Courtyard", "Edge.Cuts"]
 layers_back = ["B.Fab", "B.Courtyard", "Edge.Cuts"]
+include_3d_render = true
+render_view = "top"
 
 [bom]
 group_by = ["value", "footprint"]

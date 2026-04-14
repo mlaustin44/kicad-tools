@@ -22,7 +22,6 @@
   <text x="220" y="199" font-family="Liberation Sans Narrow" font-size="1.5">{{DATE}}</text>
   <rect x="15" y="15" width="150" height="130" fill="none" stroke="none" id="board-view"/>
   <rect x="15" y="150" width="150" height="45" fill="none" stroke="none" id="fab-notes"/>
-  <rect x="170" y="15" width="115" height="55" fill="none" stroke="none" id="render-3d"/>
-  <rect x="170" y="75" width="115" height="20" fill="none" stroke="none" id="drill-table"/>
-  <rect x="170" y="100" width="115" height="65" fill="none" stroke="none" id="stackup-table"/>
+  <rect x="170" y="15" width="115" height="85" fill="none" stroke="none" id="drill-map"/>
+  <rect x="170" y="105" width="115" height="60" fill="none" stroke="none" id="stackup-table"/>
 </svg>

@@ -47,8 +47,6 @@ class FabDrawingConfig:
     title: str
     page_size: str
     notes: list[str]
-    include_3d_render: bool
-    render_view: str
     template: Path | None = None
 
 
@@ -59,6 +57,8 @@ class AssemblyDrawingConfig:
     notes: list[str]
     layers_front: list[str]
     layers_back: list[str]
+    include_3d_render: bool = False
+    render_view: str = "top"
     template: Path | None = None
 
 
@@ -174,16 +174,10 @@ def load_config(config_path: str | Path) -> Config:
 
     # [fab_drawing]
     fab_raw = _require(raw, "root", "fab_drawing")
-    render_view = str(fab_raw.get("render_view", "top"))
-    if render_view not in ("top", "bottom", "both"):
-        raise ConfigError(f"[fab_drawing] render_view must be one of "
-                          f"top/bottom/both, got '{render_view}'")
     fab = FabDrawingConfig(
         title=str(_require(fab_raw, "fab_drawing", "title")),
         page_size=str(_require(fab_raw, "fab_drawing", "page_size")),
         notes=[str(n) for n in fab_raw.get("notes", [])],
-        include_3d_render=bool(fab_raw.get("include_3d_render", False)),
-        render_view=render_view,
         template=(_resolve_path(base, fab_raw["template"], must_exist=True,
                                 label="[fab_drawing] template")
                   if "template" in fab_raw else None),
@@ -191,12 +185,18 @@ def load_config(config_path: str | Path) -> Config:
 
     # [assembly_drawing]
     asm_raw = _require(raw, "root", "assembly_drawing")
+    render_view = str(asm_raw.get("render_view", "top"))
+    if render_view not in ("top", "bottom", "both"):
+        raise ConfigError(f"[assembly_drawing] render_view must be one of "
+                          f"top/bottom/both, got '{render_view}'")
     asm = AssemblyDrawingConfig(
         title=str(_require(asm_raw, "assembly_drawing", "title")),
         page_size=str(_require(asm_raw, "assembly_drawing", "page_size")),
         notes=[str(n) for n in asm_raw.get("notes", [])],
         layers_front=[str(l) for l in asm_raw.get("layers_front", [])],
         layers_back=[str(l) for l in asm_raw.get("layers_back", [])],
+        include_3d_render=bool(asm_raw.get("include_3d_render", False)),
+        render_view=render_view,
         template=(_resolve_path(base, asm_raw["template"], must_exist=True,
                                 label="[assembly_drawing] template")
                   if "template" in asm_raw else None),

@@ -9,7 +9,7 @@ from release_generator.utils import scaffold_output_dir
 from ._helpers import write_test_config
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-TEMPLATE = REPO_ROOT / "templates" / "titleblock_a4.svg"
+TEMPLATE = REPO_ROOT / "templates" / "titleblock_fab_a4.svg"
 
 
 def test_fab_drawing_pdf_is_produced(kicad_project, tmp_path):
