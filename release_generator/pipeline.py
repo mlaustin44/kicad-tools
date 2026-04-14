@@ -5,6 +5,7 @@ from pathlib import Path
 
 from .config import load_config, ConfigError, Config
 from .kicad_cli import check_version, KicadCliError
+from .schematic import export_schematic_pdf
 from .utils import check_no_locks, scaffold_output_dir, output_dir_for, PreflightError
 
 STEP_NAMES = [
@@ -32,6 +33,11 @@ def step_preflight(cfg: Config, *, verbose: bool) -> StepResult:
     return StepResult(name="preflight", artifacts=[out], warnings=[])
 
 
+def step_schematic(cfg: Config, *, verbose: bool) -> StepResult:
+    pdf, warnings = export_schematic_pdf(cfg, verbose=verbose)
+    return StepResult(name="schematic", artifacts=[pdf], warnings=warnings)
+
+
 def _stub(name: str):
     def fn(cfg: Config, *, verbose: bool) -> StepResult:
         print(f"[stub] {name} not implemented yet")
@@ -41,7 +47,7 @@ def _stub(name: str):
 
 STEPS = {
     "preflight": step_preflight,
-    "schematic": _stub("schematic"),
+    "schematic": step_schematic,
     "bom": _stub("bom"),
     "gerbers": _stub("gerbers"),
     "render": _stub("render"),
