@@ -1,0 +1,64 @@
+[project]
+name = "Example PCB"
+version = "3.2"
+date = "auto"
+pcb_file = "/home/mlaustin/electronics/kicad_designs/example_pcb/example_pcb.kicad_pcb"
+schematic_file = "/home/mlaustin/electronics/kicad_designs/example_pcb/example_pcb.kicad_sch"
+
+[titleblock]
+template = "../templates/titleblock_a4.svg"
+company = "Acme Corp"
+drawn_by = "M Austin"
+confidentiality = "PROPRIETARY AND CONFIDENTIAL"
+
+[[revisions]]
+rev = "A"
+ec = "N/A"
+description = "ADD LOCATING FEATURE SLOTS"
+
+[[revisions]]
+rev = "02"
+ec = "N/A"
+description = "INCREASE CS TRACE WIDTH, CHANGE TEMP SENSE, UPDATED PINOUT"
+
+[[revisions]]
+rev = "01"
+ec = "N/A"
+description = "INITIAL RELEASE"
+
+[fab_drawing]
+title = "Fab Drawing"
+page_size = "A4"
+notes = [
+    "FABRICATE IN ACCORDANCE WITH IPC-6013, CLASS 2. CERTIFICATION REQUIRED.",
+    "INSPECT IN ACCORDANCE WITH IPC-A-600. CERTIFICATION REQUIRED.",
+    "THIS PCB SHALL BE RoHS COMPLIANT.",
+    "ROUTING TOLERANCE: +/- 20%",
+    "MIN TRACE / MIN SPACE: 3 MIL / 3 MIL",
+    "SURFACE FINISH: ELECTROLESS NICKEL IMMERSION GOLD (ENIG)",
+    "SILKSCREEN WHITE, NONCONDUCTIVE EPOXY INK, BOTH SIDES",
+    "SILKSCREEN NOT TO COVER ANY PORTION OF EXPOSED COPPER.",
+    "A CERTIFICATE OF CONFORMANCE SHALL BE PROVIDED WITH EACH PCB.",
+]
+include_3d_render = true
+render_view = "top"
+
+[assembly_drawing]
+title = "Assembly Drawing"
+page_size = "A4"
+notes = [
+    "This board is to be assembled and soldered in accordance with IPC-A-610 (current revision), Class 2 specification. CERTIFICATION REQUIRED",
+    "Warning: This board contains electrostatic sensitive devices. All personnel handling this board must be electrically grounded.",
+    "PCB Assembly shall be lead free, in compliance with the RoHS Directive (current revision). CERTIFICATION REQUIRED",
+    "Pin 1 of integrated circuits (ICs) is indicated with a dot or circle in the silkscreen. Cathodes are designated with a dot, bar, or K designation on the silkscreen and/or assembly drawing",
+]
+layers_front = ["F.Fab", "F.Courtyard", "Edge.Cuts"]
+layers_back = ["B.Fab", "B.Courtyard", "Edge.Cuts"]
+
+[bom]
+group_by = ["value", "footprint"]
+columns = ["reference", "value", "footprint", "quantity", "mpn", "manufacturer"]
+
+[gerbers]
+layers = "auto"
+subtract_soldermask = false
