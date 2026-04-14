@@ -19,8 +19,8 @@ The tool replaces the user's current ad-hoc/KiBot-based workflow with a single r
 
 ## Test Fixture
 
-Primary development and validation target is the user's real project:
-`/home/mlaustin/electronics/kicad_designs/example_pcb/`
+Primary development and validation target is a real KiCad project at `<test-project-path>`
+(supplied via the `KICAD_TEST_PROJECT` env var).
 
 This is a 4-layer board with multi-page schematic, real BOM, and standard FR4 stackup — exercises the full feature set.
 
@@ -194,16 +194,16 @@ The tool ships an example `templates/titleblock_a4.svg` as a starting point. The
 ```toml
 [project]
 name = "Example PCB"
-version = "3.2"
+version = "1.0"
 date = "2026-04-14"             # or "auto"
-pcb_file = "example_pcb.kicad_pcb"
-schematic_file = "example_pcb.kicad_sch"
+pcb_file = "example.kicad_pcb"
+schematic_file = "example.kicad_sch"
 
 [titleblock]
 template = "templates/titleblock_a4.svg"   # default; overridable per drawing
-company = "Acme Corp"
-drawn_by = "M Austin"
-logo_file = "templates/logo.svg"        # optional
+company = "<company>"
+drawn_by = "Your Name"
+logo_file = "templates/logo.svg"            # optional
 confidentiality = "PROPRIETARY AND CONFIDENTIAL"
 
 [[revisions]]                               # newest first
@@ -270,7 +270,7 @@ Exit codes: `0` success, `1` config error, `2` preflight failure, `3` step failu
 
 ## Implementation Phases (with validation gates)
 
-Each phase ends with a manual smoke test against the real `example_pcb` project.
+Each phase ends with a manual smoke test against the test fixture project.
 
 | Phase | Deliverable | Validation gate |
 |-------|-------------|-----------------|

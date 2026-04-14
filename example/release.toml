@@ -1,30 +1,20 @@
 [project]
 name = "Example PCB"
-version = "3.2"
+version = "1.0"
 date = "auto"
-pcb_file = "/home/mlaustin/electronics/kicad_designs/example_pcb/example_pcb.kicad_pcb"
-schematic_file = "/home/mlaustin/electronics/kicad_designs/example_pcb/example_pcb.kicad_sch"
+pcb_file = "./example.kicad_pcb"
+schematic_file = "./example.kicad_sch"
 
 [titleblock]
 template = "../templates/titleblock_fab_a4.svg"
 company = "Acme Corp"
-drawn_by = "M Austin"
+drawn_by = "Your Name"
 confidentiality = "PROPRIETARY AND CONFIDENTIAL"
 
 [[revisions]]
 rev = "A"
 ec = "N/A"
-description = "ADD LOCATING FEATURE SLOTS"
-
-[[revisions]]
-rev = "02"
-ec = "N/A"
-description = "INCREASE CS TRACE WIDTH, CHANGE TEMP SENSE, UPDATED PINOUT"
-
-[[revisions]]
-rev = "01"
-ec = "N/A"
-description = "INITIAL RELEASE"
+description = "Initial release"
 
 [fab_drawing]
 title = "Fab Drawing"

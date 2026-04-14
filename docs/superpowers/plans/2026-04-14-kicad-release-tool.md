@@ -10,7 +10,7 @@
 
 **Spec:** `docs/superpowers/specs/2026-04-14-kicad-release-tool-design.md`
 
-**Test fixture:** `/home/mlaustin/electronics/kicad_designs/example_pcb/` — referenced via `KICAD_TEST_PROJECT` env var, integration tests skip cleanly if unset.
+**Test fixture:** `<test-project-path>` — referenced via `KICAD_TEST_PROJECT` env var, integration tests skip cleanly if unset.
 
 **Testing posture:** Unit tests only for obvious candidates (config validation, SVG placeholder substitution, BOM CSV reshape). Everything else manual smoke testing first; promote to integration test if any area needs >1 fix cycle.
 
@@ -222,17 +222,20 @@ import pytest
 from pathlib import Path
 
 KICAD_TEST_PROJECT_ENV = "KICAD_TEST_PROJECT"
-DEFAULT_TEST_PROJECT = Path("/home/mlaustin/electronics/kicad_designs/example_pcb")
 
 
 @pytest.fixture
 def kicad_project() -> Path:
     """Path to a real KiCad project for integration tests."""
     raw = os.environ.get(KICAD_TEST_PROJECT_ENV)
-    path = Path(raw) if raw else DEFAULT_TEST_PROJECT
+    if not raw:
+        pytest.skip(
+            f"integration tests require a real KiCad project; "
+            f"set the {KICAD_TEST_PROJECT_ENV} env var to a project directory"
+        )
+    path = Path(raw)
     if not path.exists():
-        pytest.skip(f"KiCad test project not available at {path}; "
-                    f"set {KICAD_TEST_PROJECT_ENV} env var")
+        pytest.skip(f"KICAD_TEST_PROJECT path does not exist: {path}")
     return path
 ```
 
@@ -1385,7 +1388,7 @@ Expected: PASS.
 .venv/bin/python -c "
 from pathlib import Path
 from release_generator.board_introspect import parse_board
-info = parse_board(Path('/home/mlaustin/electronics/kicad_designs/example_pcb/example_pcb.kicad_pcb'))
+info = parse_board(Path('<test-project-path>/example.kicad_pcb'))
 print(f'Dimensions: {info.width_mm:.2f} x {info.height_mm:.2f} mm')
 print(f'Enabled layers ({len(info.enabled_layers)}): {info.enabled_layers}')
 print(f'Stackup ({len(info.stackup)} layers):')
@@ -2662,20 +2665,20 @@ Expected: PASS.
 
 - [ ] **Step 3: Create `example/release.toml`**
 
-Copy the spec's example config exactly into `example/release.toml` (with paths adjusted as needed for the example to be self-contained — e.g., reference `templates/titleblock_a4.svg` from the repo root, or have the example `pcb_file`/`schematic_file` paths point at the user's real project).
+Copy the spec's example config exactly into `example/release.toml` (with paths adjusted as needed for the example to be self-contained — e.g., reference `templates/titleblock_a4.svg` from the repo root, or have the example `pcb_file`/`schematic_file` paths point at the test fixture project).
 
 ```toml
 [project]
 name = "Example PCB"
-version = "3.2"
+version = "1.0"
 date = "auto"
-pcb_file = "/home/mlaustin/electronics/kicad_designs/example_pcb/example_pcb.kicad_pcb"
-schematic_file = "/home/mlaustin/electronics/kicad_designs/example_pcb/example_pcb.kicad_sch"
+pcb_file = "./example.kicad_pcb"
+schematic_file = "./example.kicad_sch"
 
 [titleblock]
 template = "../templates/titleblock_a4.svg"
-company = "Acme Corp"
-drawn_by = "M Austin"
+company = "<company>"
+drawn_by = "Your Name"
 confidentiality = "PROPRIETARY AND CONFIDENTIAL"
 
 [[revisions]]
@@ -2736,7 +2739,7 @@ subtract_soldermask = false
 ```markdown
 # Example Release Configuration
 
-`release.toml` here is a sample matching the Example PCB project.
+`release.toml` here is a generic sample config; customize it for your project.
 
 To run:
 
@@ -2883,4 +2886,4 @@ git commit -m "Add README"
 - **Template iteration:** The fab and assembly drawings are visually opinionated. Expect to iterate on the template SVG (region positions, sizes) after first end-to-end run. The `--keep-scratch` flag is the debugging aid here — open `releases/{ver}/.scratch/fab-drawing.svg` in Inkscape to see exactly what the tool produced before PDF conversion.
 - **Drill table content:** The current `_build_drill_table` is a placeholder pointing at the drill report. If a richer table (hole size, count, plated/non-plated) is needed later, parse the drill report from `kicad-cli pcb export drill --generate-map` output. Out of scope for v1.
 - **Layer name mismatches:** `kicad-cli` accepts both internal layer names (`F.Cu`) and friendlier names (`F_Cu`). Stick with internal names in the config (`F.Fab`, `Edge.Cuts`) — that's what's documented in KiCad's own docs.
-- **Lock file behavior:** Both `~name.kicad_pcb.lck` and `~example_pcb.kicad_pcb.lck` (autosave variant) appear in real projects. The check looks for `~{filename}.lck` next to each file; that pattern matches both.
+- **Lock file behavior:** Both `~name.kicad_pcb.lck` and `~name.kicad_pcb.lck` (autosave variant) appear in real projects. The check looks for `~{filename}.lck` next to each file; that pattern matches both.
