@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+from .bom import generate_bom
 from .config import load_config, ConfigError, Config
 from .gerbers import export_gerbers
 from .kicad_cli import check_version, KicadCliError
@@ -44,6 +45,11 @@ def step_gerbers(cfg: Config, *, verbose: bool) -> StepResult:
     return StepResult(name="gerbers", artifacts=artifacts, warnings=warnings)
 
 
+def step_bom(cfg: Config, *, verbose: bool) -> StepResult:
+    bom_csv, warnings = generate_bom(cfg, verbose=verbose)
+    return StepResult(name="bom", artifacts=[bom_csv], warnings=warnings)
+
+
 def _stub(name: str):
     def fn(cfg: Config, *, verbose: bool) -> StepResult:
         print(f"[stub] {name} not implemented yet")
@@ -54,7 +60,7 @@ def _stub(name: str):
 STEPS = {
     "preflight": step_preflight,
     "schematic": step_schematic,
-    "bom": _stub("bom"),
+    "bom": step_bom,
     "gerbers": step_gerbers,
     "render": _stub("render"),
     "fab-drawing": _stub("fab-drawing"),
