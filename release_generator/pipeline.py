@@ -1,8 +1,11 @@
-"""Pipeline orchestration. Steps are filled in by later tasks."""
+"""Pipeline orchestration."""
 from __future__ import annotations
 from dataclasses import dataclass
+from pathlib import Path
 
-from .config import load_config, ConfigError
+from .config import load_config, ConfigError, Config
+from .kicad_cli import check_version, KicadCliError
+from .utils import check_no_locks, scaffold_output_dir, output_dir_for, PreflightError
 
 STEP_NAMES = [
     "preflight",
@@ -18,8 +21,33 @@ STEP_NAMES = [
 @dataclass
 class StepResult:
     name: str
-    artifacts: list[str]
+    artifacts: list[Path]
     warnings: list[str]
+
+
+def step_preflight(cfg: Config, *, verbose: bool) -> StepResult:
+    check_version()
+    check_no_locks(cfg.project.pcb_file, cfg.project.schematic_file)
+    out = scaffold_output_dir(cfg)
+    return StepResult(name="preflight", artifacts=[out], warnings=[])
+
+
+def _stub(name: str):
+    def fn(cfg: Config, *, verbose: bool) -> StepResult:
+        print(f"[stub] {name} not implemented yet")
+        return StepResult(name=name, artifacts=[], warnings=[])
+    return fn
+
+
+STEPS = {
+    "preflight": step_preflight,
+    "schematic": _stub("schematic"),
+    "bom": _stub("bom"),
+    "gerbers": _stub("gerbers"),
+    "render": _stub("render"),
+    "fab-drawing": _stub("fab-drawing"),
+    "assembly-drawing": _stub("assembly-drawing"),
+}
 
 
 def run_pipeline(config_path: str, only: list[str] | None, dry_run: bool,
@@ -34,12 +62,30 @@ def run_pipeline(config_path: str, only: list[str] | None, dry_run: bool,
     if unknown:
         print(f"error: unknown step(s): {unknown}. Valid: {STEP_NAMES}")
         return 1
+
+    # preflight is always implicit unless explicitly excluded by --only
+    if "preflight" not in selected:
+        selected = ["preflight"] + selected
+
     if dry_run:
         print(f"Project: {cfg.project.name} v{cfg.project.version}")
-        print(f"Output: releases/{cfg.release_dir_name}/")
+        print(f"Output: {output_dir_for(cfg)}")
         for name in selected:
             print(f"[dry-run] would execute: {name}")
         return 0
+
+    results: list[StepResult] = []
     for name in selected:
-        print(f"[stub] {name} not implemented yet")
+        try:
+            r = STEPS[name](cfg, verbose=verbose)
+            results.append(r)
+        except (KicadCliError, PreflightError) as e:
+            print(f"[{name}] failed: {e}")
+            return 2 if name == "preflight" else 3
+
+    print("\n--- Summary ---")
+    for r in results:
+        print(f"  {r.name}: {len(r.artifacts)} artifact(s), {len(r.warnings)} warning(s)")
+        for w in r.warnings:
+            print(f"    warn: {w}")
     return 0
