@@ -6,7 +6,7 @@ pcb_file = "/home/mlaustin/electronics/kicad_designs/example_pcb/example_pcb.kic
 schematic_file = "/home/mlaustin/electronics/kicad_designs/example_pcb/example_pcb.kicad_sch"
 
 [titleblock]
-template = "../templates/titleblock_a4.svg"
+template = "../templates/titleblock_fab_a4.svg"
 company = "Acme Corp"
 drawn_by = "M Austin"
 confidentiality = "PROPRIETARY AND CONFIDENTIAL"
@@ -46,6 +46,7 @@ render_view = "top"
 [assembly_drawing]
 title = "Assembly Drawing"
 page_size = "A4"
+template = "../templates/titleblock_assembly_a4.svg"
 notes = [
     "This board is to be assembled and soldered in accordance with IPC-A-610 (current revision), Class 2 specification. CERTIFICATION REQUIRED",
     "Warning: This board contains electrostatic sensitive devices. All personnel handling this board must be electrically grounded.",
