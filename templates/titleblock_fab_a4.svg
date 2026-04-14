@@ -20,8 +20,8 @@
   <text x="188" y="199" font-family="Liberation Sans Narrow" font-size="1.5">A4</text>
   <text x="210" y="199" font-family="Liberation Sans Narrow" font-size="1.5" font-weight="bold">Date:</text>
   <text x="220" y="199" font-family="Liberation Sans Narrow" font-size="1.5">{{DATE}}</text>
-  <rect x="15" y="15" width="150" height="130" fill="none" stroke="none" id="board-view"/>
-  <rect x="15" y="150" width="150" height="45" fill="none" stroke="none" id="fab-notes"/>
-  <rect x="170" y="15" width="115" height="85" fill="none" stroke="none" id="drill-map"/>
-  <rect x="170" y="105" width="115" height="60" fill="none" stroke="none" id="stackup-table"/>
+  <rect id="board-characteristics" x="15" y="16.24" width="150" height="53.30" fill="none" stroke="none"/>
+  <rect id="stackup-table" x="165" y="14.33" width="120" height="84.03" fill="none" stroke="none"/>
+  <rect id="drill-map" x="15" y="69.54" width="150" height="125.46" fill="none" stroke="none"/>
+  <rect id="fab-notes" x="177.74" y="69.54" width="102.60" height="87.52" fill="none" stroke="none"/>
 </svg>

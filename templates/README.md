@@ -10,7 +10,7 @@ drawing PDFs.
   directly; maintained as a canonical source so that changes to the title
   block layout can be propagated to the two derived templates.
 - `titleblock_fab_a4.svg` — identical to base, plus invisible region
-  rectangles for `board-view`, `render-3d`, `drill-table`, `stackup-table`,
+  rectangles for `board-characteristics`, `drill-map`, `stackup-table`,
   and `fab-notes`. Used by the fab drawing step.
 - `titleblock_assembly_a4.svg` — identical to base, plus invisible region
   rectangles for `front-view`, `back-view`, and `assembly-notes`. Used by

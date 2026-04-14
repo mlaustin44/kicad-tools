@@ -111,11 +111,13 @@ def compose_assembly_drawing(cfg: Config, *, verbose: bool) -> tuple[Path, list[
 
     # 9. Place assembly notes.
     if "assembly-notes" in regions and cfg.assembly_drawing.notes:
+        from .fab_drawing import NOTE_SIZE
         content = _build_notes_list(cfg.assembly_drawing.notes)
-        notes_h = max(1, len(cfg.assembly_drawing.notes)) * 4
+        notes_h = (max(1, len(cfg.assembly_drawing.notes))
+                   * NOTE_SIZE * 1.7 + NOTE_SIZE)
         tpl.replace_region("assembly-notes",
                            _wrap_in_region(content, regions["assembly-notes"],
-                                           60, notes_h))
+                                           90, notes_h))
 
     # 10. Write SVG, convert to PDF.
     final_svg = scratch / "assembly-drawing.svg"
