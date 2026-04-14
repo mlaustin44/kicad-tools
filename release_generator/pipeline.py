@@ -5,6 +5,7 @@ from pathlib import Path
 
 from .bom import generate_bom
 from .config import load_config, ConfigError, Config
+from .fab_drawing import compose_fab_drawing
 from .gerbers import export_gerbers
 from .kicad_cli import check_version, KicadCliError
 from .render3d import render_pcb
@@ -56,6 +57,11 @@ def step_render(cfg: Config, *, verbose: bool) -> StepResult:
     return StepResult(name="render", artifacts=pngs, warnings=warnings)
 
 
+def step_fab_drawing(cfg: Config, *, verbose: bool) -> StepResult:
+    pdf, warnings = compose_fab_drawing(cfg, verbose=verbose)
+    return StepResult(name="fab-drawing", artifacts=[pdf], warnings=warnings)
+
+
 def _stub(name: str):
     def fn(cfg: Config, *, verbose: bool) -> StepResult:
         print(f"[stub] {name} not implemented yet")
@@ -69,7 +75,7 @@ STEPS = {
     "bom": step_bom,
     "gerbers": step_gerbers,
     "render": step_render,
-    "fab-drawing": _stub("fab-drawing"),
+    "fab-drawing": step_fab_drawing,
     "assembly-drawing": _stub("assembly-drawing"),
 }
 
