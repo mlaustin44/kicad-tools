@@ -2,7 +2,7 @@
 from __future__ import annotations
 from pathlib import Path
 from .config import Config
-from .kicad_cli import run as kicad_run
+from .kicad_cli import run as kicad_run, KicadCliError
 from .utils import output_dir_for
 
 
@@ -27,5 +27,5 @@ def export_schematic_pdf(cfg: Config, *, verbose: bool) -> tuple[Path, list[str]
     kicad_run(args, verbose=verbose)
     warnings: list[str] = []
     if not out_pdf.exists():
-        raise RuntimeError(f"expected output {out_pdf} not produced")
+        raise KicadCliError(f"kicad-cli sch export pdf reported success but {out_pdf} was not produced")
     return out_pdf, warnings
