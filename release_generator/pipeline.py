@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .config import load_config, ConfigError, Config
+from .gerbers import export_gerbers
 from .kicad_cli import check_version, KicadCliError
 from .schematic import export_schematic_pdf
 from .utils import check_no_locks, scaffold_output_dir, output_dir_for, PreflightError
@@ -38,6 +39,11 @@ def step_schematic(cfg: Config, *, verbose: bool) -> StepResult:
     return StepResult(name="schematic", artifacts=[pdf], warnings=warnings)
 
 
+def step_gerbers(cfg: Config, *, verbose: bool) -> StepResult:
+    artifacts, warnings = export_gerbers(cfg, verbose=verbose)
+    return StepResult(name="gerbers", artifacts=artifacts, warnings=warnings)
+
+
 def _stub(name: str):
     def fn(cfg: Config, *, verbose: bool) -> StepResult:
         print(f"[stub] {name} not implemented yet")
@@ -49,7 +55,7 @@ STEPS = {
     "preflight": step_preflight,
     "schematic": step_schematic,
     "bom": _stub("bom"),
-    "gerbers": _stub("gerbers"),
+    "gerbers": step_gerbers,
     "render": _stub("render"),
     "fab-drawing": _stub("fab-drawing"),
     "assembly-drawing": _stub("assembly-drawing"),
