@@ -104,7 +104,20 @@ def test_rejects_invalid_render_view(tmp_path):
 def test_rejects_zero_revisions(tmp_path):
     cfg_path = write_minimal_config(tmp_path)
     text = cfg_path.read_text()
-    text = text.replace('[[revisions]]\nrev = "01"\nec = "N/A"\ndescription = "Initial"', '')
+    new_text = text.replace('[[revisions]]\nrev = "01"\nec = "N/A"\ndescription = "Initial"', '')
+    assert new_text != text, "test fixture out of sync with template"
+    cfg_path.write_text(new_text)
+    with pytest.raises(ConfigError, match="revisions"):
+        load_config(cfg_path)
+
+
+def test_rejects_revision_missing_ec_field(tmp_path):
+    cfg_path = write_minimal_config(tmp_path)
+    text = cfg_path.read_text()
+    # Remove the ec line from the revision entry
+    text = text.replace('ec = "N/A"\n', '')
+    assert "ec = " not in text.split("[[revisions]]")[1].split("\n\n")[0], \
+        "test fixture out of sync: failed to remove ec line"
     cfg_path.write_text(text)
     with pytest.raises(ConfigError, match="revisions"):
         load_config(cfg_path)
@@ -117,9 +130,18 @@ def test_sanitizes_version_for_directory(tmp_path):
     assert ".." not in cfg.release_dir_name
 
 
+def test_rejects_version_that_sanitizes_to_non_alnum(tmp_path):
+    cfg_path = write_minimal_config(tmp_path, version="..")
+    cfg = load_config(cfg_path)
+    with pytest.raises(ConfigError, match="no alphanumerics"):
+        _ = cfg.release_dir_name
+
+
 def test_gerbers_layers_explicit_list(tmp_path):
     cfg_path = write_minimal_config(tmp_path)
-    text = cfg_path.read_text().replace('layers = "auto"', 'layers = ["F.Cu", "B.Cu"]')
-    cfg_path.write_text(text)
+    text = cfg_path.read_text()
+    new_text = text.replace('layers = "auto"', 'layers = ["F.Cu", "B.Cu"]')
+    assert new_text != text, "test fixture out of sync with template"
+    cfg_path.write_text(new_text)
     cfg = load_config(cfg_path)
     assert cfg.gerbers.layers == ["F.Cu", "B.Cu"]

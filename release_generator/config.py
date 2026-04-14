@@ -89,10 +89,16 @@ class Config:
     @property
     def release_dir_name(self) -> str:
         """Sanitized version string safe for use as a directory name."""
-        s = re.sub(r"[^A-Za-z0-9._-]", "_", self.project.version)
+        sanitized = re.sub(r"[^A-Za-z0-9._-]", "_", self.project.version)
         # Collapse runs of dots to a single dot so ".." can't appear.
-        s = re.sub(r"\.{2,}", ".", s)
-        return s
+        sanitized = re.sub(r"\.{2,}", ".", sanitized)
+        if not any(c.isalnum() for c in sanitized):
+            raise ConfigError(
+                f"[project] version {self.project.version!r} sanitizes to "
+                f"a directory name {sanitized!r} with no alphanumerics; "
+                f"use a version string with at least one letter or digit"
+            )
+        return sanitized
 
 
 def _require(d: dict, section: str, key: str):
@@ -151,9 +157,14 @@ def load_config(config_path: str | Path) -> Config:
     revs_raw = raw.get("revisions", [])
     if not revs_raw:
         raise ConfigError("at least one [[revisions]] entry is required")
-    revisions = [RevisionEntry(rev=str(r["rev"]), ec=str(r["ec"]),
-                               description=str(r["description"]))
-                 for r in revs_raw]
+    revisions = []
+    for i, r in enumerate(revs_raw):
+        section = f"revisions[{i}]"
+        revisions.append(RevisionEntry(
+            rev=str(_require(r, section, "rev")),
+            ec=str(_require(r, section, "ec")),
+            description=str(_require(r, section, "description")),
+        ))
 
     # [schematic] (optional)
     sch_raw = raw.get("schematic", {})
