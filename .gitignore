@@ -6,3 +6,9 @@ __pycache__/
 build/
 dist/
 releases/
+
+# Client-specific templates (kept local, not open-sourced)
+templates/private/
+
+# Local overrides of example configs
+example/*.local.toml
