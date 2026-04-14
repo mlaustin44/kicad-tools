@@ -9,6 +9,8 @@ from __future__ import annotations
 import base64
 import datetime
 import re
+import shutil
+import subprocess
 from pathlib import Path
 
 from lxml import etree
@@ -108,15 +110,20 @@ def _build_text_vars(cfg: Config, drawing_title: str,
 
 
 def _wrap_in_region(content: etree._Element, region: Region,
-                    content_width: float, content_height: float) -> etree._Element:
+                    content_width: float, content_height: float,
+                    *, padding: float = 0.0) -> etree._Element:
     """Wrap content element in a <g> that translates+scales it to fit region.
 
-    Aspect-preserving fit. Content is centered in the region.
+    Aspect-preserving fit. Content is centered in the region. ``padding`` is
+    an inset fraction (0.0–1.0) applied on all sides; e.g. padding=0.05 makes
+    the content fill 90% of the region (5% margin each side).
     """
     if content_width <= 0 or content_height <= 0:
         scale = 1.0
     else:
         scale = min(region.width / content_width, region.height / content_height)
+        if padding:
+            scale *= max(0.0, 1.0 - 2.0 * padding)
     rendered_w = content_width * scale
     rendered_h = content_height * scale
     tx = region.x + (region.width - rendered_w) / 2
@@ -125,6 +132,34 @@ def _wrap_in_region(content: etree._Element, region: Region,
     g.set("transform", f"translate({tx} {ty}) scale({scale})")
     g.append(content)
     return g
+
+
+def _crop_svg_to_drawing(src: Path, dst: Path) -> bool:
+    """Crop an SVG so its viewBox matches the drawing content (not the page).
+
+    Uses Inkscape's ``--export-area-drawing`` which computes the bounding box
+    of visible elements and rewrites the viewBox accordingly. This is what we
+    need for KiCad's drill-map export, which otherwise ships the drill data
+    inside a full A4 page frame with lots of empty space.
+
+    Returns True on success. On any failure (no Inkscape, non-zero exit,
+    missing output) returns False and leaves ``dst`` unwritten so the caller
+    can fall back to the uncropped source.
+    """
+    inkscape = shutil.which("inkscape")
+    if not inkscape:
+        return False
+    try:
+        res = subprocess.run(
+            [inkscape, "--export-type=svg", "--export-plain-svg",
+             "--export-area-drawing", "-o", str(dst), str(src)],
+            capture_output=True, timeout=60,
+        )
+    except (subprocess.TimeoutExpired, OSError):
+        return False
+    if res.returncode != 0:
+        return False
+    return dst.exists() and dst.stat().st_size > 0
 
 
 def _load_svg_inner(svg_path: Path) -> tuple[etree._Element, float, float]:
@@ -278,8 +313,10 @@ def _build_stackup_table(board: BoardInfo) -> tuple[etree._Element, float, float
         })
 
     body_top = header_y_top + row_h
+    # Top frame.
     _line(0, header_y_top, total_w, header_y_top, w=0.2)
-    _line(0, body_top, total_w, body_top, w=0.2)
+    # Thick underline below the header row — separates header from body.
+    _line(0, body_top, total_w, body_top, w=0.3)
 
     for i, layer in enumerate(board.stackup):
         baseline = body_top + (i + 1) * row_h - row_h * 0.28
@@ -303,6 +340,11 @@ def _build_stackup_table(board: BoardInfo) -> tuple[etree._Element, float, float
                   family=FONT_STACK_MONO)
 
     body_bottom = body_top + len(board.stackup) * row_h
+    # Hairline row dividers between each data row (skip the last — that's
+    # the table's bottom border).
+    for i in range(1, len(board.stackup)):
+        y = body_top + i * row_h
+        _line(0, y, total_w, y, w=0.1)
     _line(0, body_bottom, total_w, body_bottom, w=0.2)
 
     # Frame + column dividers.
@@ -319,15 +361,20 @@ def _build_stackup_table(board: BoardInfo) -> tuple[etree._Element, float, float
 # --- Notes ------------------------------------------------------------------
 
 def _build_notes_list(notes: list[str]) -> etree._Element:
-    """Build a numbered list of notes as text elements."""
+    """Build a numbered list of notes as text elements.
+
+    Rendered in the body "data" typography (FONT_STACK_MONO at BODY_SIZE) so
+    notes match the values in the board-characteristics table rather than
+    standing out in their own style.
+    """
     g = etree.Element(f"{{{SVG_NS}}}g")
-    row_h = NOTE_SIZE * 1.7
+    row_h = BODY_SIZE * 1.7
     for i, note in enumerate(notes, start=1):
         y = (i + 0.5) * row_h
         _text(g, 0, y, f"{i}.",
-              size=NOTE_SIZE, weight="bold")
+              size=BODY_SIZE, weight="bold", family=FONT_STACK_MONO)
         _text(g, 4.5, y, note,
-              size=NOTE_SIZE, weight="normal")
+              size=BODY_SIZE, weight="normal", family=FONT_STACK_MONO)
     return g
 
 
@@ -382,12 +429,22 @@ def compose_fab_drawing(cfg: Config, *, verbose: bool) -> tuple[Path, list[str]]
                 f"template missing region id='{needed}', skipping content")
 
     # 5. Place drill map (KiCad-generated SVG with board outline + table).
+    # KiCad emits the map inside a full A4 page frame; crop to drawing bounds
+    # via Inkscape so the content fills the region instead of being stranded
+    # in a corner.
     if "drill-map" in regions:
         if drill_map_svg.exists():
-            g, dw, dh = _load_svg_inner(drill_map_svg)
+            cropped = drill_dir / f"{cfg.project.pcb_file.stem}-drl_map.cropped.svg"
+            src = cropped if _crop_svg_to_drawing(drill_map_svg, cropped) \
+                else drill_map_svg
+            if src is drill_map_svg:
+                warnings.append(
+                    "Inkscape crop failed for drill map; using uncropped SVG "
+                    "(content may render small)")
+            g, dw, dh = _load_svg_inner(src)
             tpl.replace_region("drill-map",
                                _wrap_in_region(g, regions["drill-map"],
-                                               dw, dh))
+                                               dw, dh, padding=0.025))
         else:
             warnings.append(
                 f"drill map SVG not found at {drill_map_svg}; skipping")
@@ -410,7 +467,7 @@ def compose_fab_drawing(cfg: Config, *, verbose: bool) -> tuple[Path, list[str]]
     # 8. Place fab notes.
     if "fab-notes" in regions and cfg.fab_drawing.notes:
         content = _build_notes_list(cfg.fab_drawing.notes)
-        notes_h = max(1, len(cfg.fab_drawing.notes)) * NOTE_SIZE * 1.7 + NOTE_SIZE
+        notes_h = max(1, len(cfg.fab_drawing.notes)) * BODY_SIZE * 1.7 + BODY_SIZE
         tpl.replace_region("fab-notes",
                            _wrap_in_region(content, regions["fab-notes"],
                                            90, notes_h))
