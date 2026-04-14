@@ -14,10 +14,12 @@ def test_gerbers_produces_expected_files(kicad_project, tmp_path):
     artifacts, _ = export_gerbers(cfg, verbose=False)
     out = output_dir_for(cfg)
     gerber_dir = out / "gerbers"
-    # Must have at least one .gbr (copper layer) and at least one .drl
-    gbr_files = list(gerber_dir.glob("*.gbr"))
+    # Must have the gerber job file (always emitted on successful export),
+    # a top-copper layer (extension varies: .gtl, .gbr, .g1...), and drill files.
+    assert list(gerber_dir.glob("*.gbrjob")), f"no .gbrjob in {gerber_dir}"
+    top_copper = [p for p in gerber_dir.iterdir() if "F_Cu" in p.name or "F.Cu" in p.name]
+    assert top_copper, f"no top-copper gerber in {gerber_dir}"
     drl_files = list(gerber_dir.glob("*.drl"))
-    assert gbr_files, f"no .gbr files in {gerber_dir}"
     assert drl_files, f"no .drl files in {gerber_dir}"
     # Pick-and-place CSV exists and has a header row
     pos = out / "pick-and-place.csv"
