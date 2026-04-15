@@ -394,9 +394,10 @@ export function parse_expr(expr: string | List, ...defs: PropertyDefinition[]) {
         }
 
         if (!def) {
-            log.warn(
-                `No definition found for element ${element} in expression ${expr}`,
-            );
+            // Silently skip unknown elements. KiCad regularly adds new
+            // s-expression fields (e.g. in_pos_files, embedded_fonts) that
+            // the vendored parser hasn't caught up with. For a read-only
+            // viewer these are harmless; the noise was drowning real logs.
             continue;
         }
 
