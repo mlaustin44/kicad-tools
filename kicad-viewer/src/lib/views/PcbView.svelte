@@ -3,10 +3,18 @@
   import { project, componentsByRefdes } from '$lib/stores/project';
   import { layerVisibility, layers, activeLayer } from '$lib/stores/layers';
   import { settings } from '$lib/stores/settings';
-  import { selection, selectComponent, clearSelection } from '$lib/stores/selection';
+  import {
+    selection,
+    selectComponent,
+    selectTrack,
+    selectZone,
+    selectVia,
+    clearSelection
+  } from '$lib/stores/selection';
   import { buildPcbScene, type PcbScene } from '$lib/pcb/scene';
   import { drawPcb, type Viewport } from '$lib/pcb/render';
   import { hitPoint } from '$lib/geom/rtree';
+  import { hitTrack, hitVia, hitZone, polygonAreaMm2 } from '$lib/pcb/hit-test';
   import ContextMenu from '$lib/ui/ContextMenu.svelte';
 
   interface Props {
@@ -40,6 +48,10 @@
       const fp = comp ? scene.footprints.find((f) => f.refdes === comp.refdes) : undefined;
       selFpUuid = fp?.uuid ?? null;
     }
+    const selGeom =
+      $selection?.kind === 'track' || $selection?.kind === 'zone' || $selection?.kind === 'via'
+        ? { kind: $selection.kind, idx: $selection.idx }
+        : null;
     drawPcb(
       ctx,
       scene,
@@ -49,7 +61,11 @@
       $activeLayer,
       $settings.inactiveLayerOpacity,
       selFpUuid,
-      highlightedNet
+      highlightedNet,
+      selGeom,
+      $project?.pcb.tracks,
+      $project?.pcb.zones,
+      $project?.pcb.vias
     );
   }
 
@@ -138,22 +154,74 @@
   }
 
   function onClick(e: MouseEvent) {
-    if (!scene || !canvas) return;
+    if (!scene || !canvas || !$project) return;
     const rect = canvas.getBoundingClientRect();
     const mx = (e.clientX - rect.left - viewport.x) / viewport.scale;
     const my = (e.clientY - rect.top - viewport.y) / viewport.scale;
+
+    // Priority: footprint > via > track > zone. Footprints win so probing
+    // components still works on top of copper features.
     const hits = hitPoint(scene.footprintIndex, mx, my);
-    // Scene indexes by footprint UUID, but Inspector lookups key by component
-    // (symbol) UUID. KiCad keeps these separate, so resolve via refdes.
     const fpUuid = hits[0];
     if (fpUuid) {
       const fp = scene.footprints.find((f) => f.uuid === fpUuid);
       const comp = fp ? $componentsByRefdes.get(fp.refdes) : undefined;
-      if (comp) selectComponent({ uuid: comp.uuid, source: 'pcb' });
-      else clearSelection();
-    } else {
-      clearSelection();
+      if (comp) {
+        selectComponent({ uuid: comp.uuid, source: 'pcb' });
+        return;
+      }
     }
+
+    const vias = $project.pcb.vias;
+    for (let i = 0; i < vias.length; i++) {
+      if (hitVia(mx, my, vias[i]!)) {
+        selectVia({ idx: i, source: 'pcb' });
+        return;
+      }
+    }
+
+    // Tracks: add a small slop (2px at current zoom) so thin traces are
+    // clickable even when you can't line up perfectly.
+    const slopMm = 2 / viewport.scale;
+    const tracks = $project.pcb.tracks;
+    let bestTrack = -1;
+    let bestTrackDist = Infinity;
+    for (let i = 0; i < tracks.length; i++) {
+      const t = tracks[i]!;
+      if (!$layerVisibility.get(t.layerId)) continue;
+      if (!hitTrack(mx, my, t, slopMm)) continue;
+      // Prefer the narrowest matching track (thinnest = most specific hit).
+      if (t.widthMm < bestTrackDist) {
+        bestTrack = i;
+        bestTrackDist = t.widthMm;
+      }
+    }
+    if (bestTrack >= 0) {
+      selectTrack({ idx: bestTrack, source: 'pcb' });
+      return;
+    }
+
+    // Zones: prefer the smallest-area zone containing the point so nested
+    // pours don't always select the big outer one.
+    const zones = $project.pcb.zones;
+    let bestZone = -1;
+    let bestZoneArea = Infinity;
+    for (let i = 0; i < zones.length; i++) {
+      const z = zones[i]!;
+      if (!$layerVisibility.get(z.layerId)) continue;
+      if (!hitZone(mx, my, z)) continue;
+      const area = polygonAreaMm2(z.polygon);
+      if (area < bestZoneArea) {
+        bestZone = i;
+        bestZoneArea = area;
+      }
+    }
+    if (bestZone >= 0) {
+      selectZone({ idx: bestZone, source: 'pcb' });
+      return;
+    }
+
+    clearSelection();
   }
 
   let ctxMenu = $state<{ open: boolean; x: number; y: number; refdes: string | null }>({

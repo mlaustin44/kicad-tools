@@ -1,5 +1,5 @@
 import type { PcbScene } from './scene';
-import type { LayerInfo, GraphicGeom, Pad, Point, TrackSeg, Via, FootprintGeom } from '$lib/model/project';
+import type { LayerInfo, GraphicGeom, Pad, Point, TrackSeg, Via, Zone, FootprintGeom } from '$lib/model/project';
 import { computeDrawOrder } from './draw-order';
 import { classifyLayer } from './layer-side';
 
@@ -7,6 +7,11 @@ export interface Viewport {
   x: number;
   y: number;
   scale: number;
+}
+
+export interface SelectedGeom {
+  kind: 'track' | 'zone' | 'via';
+  idx: number;
 }
 
 export function drawPcb(
@@ -18,7 +23,11 @@ export function drawPcb(
   activeLayer: string,
   inactiveOpacity: number,
   selectedFootprint?: string | null,
-  highlightedNet?: string | null
+  highlightedNet?: string | null,
+  selectedGeom?: SelectedGeom | null,
+  projectTracks?: TrackSeg[],
+  projectZones?: Zone[],
+  projectVias?: Via[]
 ): void {
   const { width, height } = ctx.canvas;
   ctx.clearRect(0, 0, width, height);
@@ -58,41 +67,144 @@ export function drawPcb(
   }
 
   if (highlightedNet) {
-    ctx.strokeStyle = '#ffd54a';
+    // Fog over everything (already drawn at this point). Then re-paint
+    // matching geometry on top in its own layer color plus a bright accent
+    // outline so the net pops. The fog rect is sized to the scene bounds with
+    // a generous pad so it covers any off-board scribbles.
+    const b = scene.boundsMm;
+    const pad = Math.max(b.w, b.h) * 2;
+    ctx.save();
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.72)';
+    ctx.fillRect(b.x - pad, b.y - pad, b.w + pad * 2, b.h + pad * 2);
+    ctx.restore();
+
     const seenPads = new Set<Pad>();
-    // Walk all tracks (across layers/buckets) whose netName matches
-    for (const [, buckets] of scene.byLayer) {
+    const accent = '#ffd54a';
+    const accentLW = Math.max(0.05, 1.5 / viewport.scale);
+
+    for (const l of ordered) {
+      if (!visible.get(l.id)) continue;
+      const buckets = scene.byLayer.get(l.id);
+      if (!buckets) continue;
+      ctx.strokeStyle = l.defaultColor;
+      ctx.fillStyle = l.defaultColor;
+
+      // Zones on the highlighted net
+      for (const z of buckets.zones) {
+        if (z.netName !== highlightedNet || z.polygon.length < 3) continue;
+        ctx.globalAlpha = 0.6;
+        ctx.beginPath();
+        const p0 = z.polygon[0]!;
+        ctx.moveTo(p0.x, p0.y);
+        for (let i = 1; i < z.polygon.length; i++) {
+          const pt = z.polygon[i]!;
+          ctx.lineTo(pt.x, pt.y);
+        }
+        ctx.closePath();
+        ctx.fill();
+        ctx.globalAlpha = 1;
+      }
+
+      // Pads on the net (dedupe across layer buckets)
+      for (const { fp, pad: p } of buckets.pads) {
+        if (p.netName !== highlightedNet) continue;
+        if (seenPads.has(p)) continue;
+        seenPads.add(p);
+        ctx.save();
+        ctx.translate(fp.position.x, fp.position.y);
+        if (fp.side === 'bottom') ctx.scale(-1, 1);
+        ctx.rotate((fp.rotationDeg * Math.PI) / 180);
+        ctx.fillStyle = l.defaultColor;
+        drawPadShape(ctx, p);
+        ctx.restore();
+      }
+
+      // Tracks on the net
       for (const t of buckets.tracks) {
         if (t.netName !== highlightedNet) continue;
-        ctx.lineWidth = t.widthMm + 0.1;
+        ctx.strokeStyle = l.defaultColor;
+        ctx.lineWidth = t.widthMm;
         ctx.beginPath();
         ctx.moveTo(t.a.x, t.a.y);
         ctx.lineTo(t.b.x, t.b.y);
         ctx.stroke();
       }
-      // Vias on the net, too (for through-hole connections)
+
+      // Vias on the net
+      for (const v of buckets.vias) {
+        if (v.netName !== highlightedNet) continue;
+        ctx.fillStyle = l.defaultColor;
+        ctx.beginPath();
+        ctx.arc(v.position.x, v.position.y, v.diameterMm / 2, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    // Accent outline pass — one more lap to draw bright strokes around
+    // highlighted tracks/vias/pads so they read at a glance.
+    ctx.strokeStyle = accent;
+    ctx.lineWidth = accentLW;
+    seenPads.clear();
+    for (const l of ordered) {
+      if (!visible.get(l.id)) continue;
+      const buckets = scene.byLayer.get(l.id);
+      if (!buckets) continue;
+      for (const t of buckets.tracks) {
+        if (t.netName !== highlightedNet) continue;
+        ctx.beginPath();
+        ctx.moveTo(t.a.x, t.a.y);
+        ctx.lineTo(t.b.x, t.b.y);
+        ctx.stroke();
+      }
       for (const v of buckets.vias) {
         if (v.netName !== highlightedNet) continue;
         ctx.beginPath();
-        ctx.arc(v.position.x, v.position.y, v.diameterMm / 2 + 0.05, 0, Math.PI * 2);
+        ctx.arc(v.position.x, v.position.y, v.diameterMm / 2 + accentLW, 0, Math.PI * 2);
         ctx.stroke();
       }
-      // Pads on the net (dedupe — through-hole pads appear in multiple layer buckets)
-      for (const { fp, pad } of buckets.pads) {
-        if (pad.netName !== highlightedNet) continue;
-        if (seenPads.has(pad)) continue;
-        seenPads.add(pad);
-        ctx.save();
-        ctx.translate(fp.position.x, fp.position.y);
-        if (fp.side === 'bottom') ctx.scale(-1, 1);
-        ctx.rotate((fp.rotationDeg * Math.PI) / 180);
-        ctx.fillStyle = '#ffd54a';
-        ctx.globalAlpha = 0.6;
-        drawPadShape(ctx, pad);
-        ctx.globalAlpha = 1;
-        ctx.restore();
+    }
+
+    // Drill holes re-cut through the repainted copper.
+    drawDrillHoles(ctx, scene);
+  }
+
+  // Selection overlay for an individual copper feature (track/zone/via).
+  if (selectedGeom) {
+    ctx.save();
+    ctx.strokeStyle = '#6aa6ff';
+    ctx.lineWidth = Math.max(0.08, 2 / viewport.scale);
+    if (selectedGeom.kind === 'track' && projectTracks) {
+      const t = projectTracks[selectedGeom.idx];
+      if (t) {
+        ctx.lineWidth = Math.max(t.widthMm + 0.15, 3 / viewport.scale);
+        ctx.strokeStyle = '#6aa6ff';
+        ctx.beginPath();
+        ctx.moveTo(t.a.x, t.a.y);
+        ctx.lineTo(t.b.x, t.b.y);
+        ctx.stroke();
+      }
+    } else if (selectedGeom.kind === 'zone' && projectZones) {
+      const z = projectZones[selectedGeom.idx];
+      if (z && z.polygon.length >= 3) {
+        ctx.beginPath();
+        const p0 = z.polygon[0]!;
+        ctx.moveTo(p0.x, p0.y);
+        for (let i = 1; i < z.polygon.length; i++) {
+          const pt = z.polygon[i]!;
+          ctx.lineTo(pt.x, pt.y);
+        }
+        ctx.closePath();
+        ctx.stroke();
+      }
+    } else if (selectedGeom.kind === 'via' && projectVias) {
+      const v = projectVias[selectedGeom.idx];
+      if (v) {
+        ctx.beginPath();
+        ctx.arc(v.position.x, v.position.y, v.diameterMm / 2 + 0.1, 0, Math.PI * 2);
+        ctx.stroke();
       }
     }
+    ctx.restore();
   }
 
   // Labels — only at sufficient zoom
