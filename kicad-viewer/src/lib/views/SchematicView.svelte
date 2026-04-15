@@ -1,9 +1,10 @@
 <script lang="ts">
   import { untrack } from 'svelte';
   import { project, sheetsByUuid, componentsByUuid } from '$lib/stores/project';
-  import { selectComponent, selection } from '$lib/stores/selection';
+  import { selectComponent, selection, clearSelection } from '$lib/stores/selection';
   import { buildSheetSvg } from '$lib/sch/render';
   import Breadcrumb from '$lib/ui/Breadcrumb.svelte';
+  import ContextMenu from '$lib/ui/ContextMenu.svelte';
 
   interface Props {
     activeSheetUuid: string | null;
@@ -68,6 +69,32 @@
     const uuid = g.getAttribute('data-uuid');
     if (uuid) selectComponent({ uuid, source: 'sch' });
   }
+
+  let ctxMenu = $state<{ open: boolean; x: number; y: number; refdes: string | null }>({
+    open: false, x: 0, y: 0, refdes: null
+  });
+
+  function onContextMenu(e: MouseEvent) {
+    e.preventDefault();
+    const g = (e.target as Element).closest('[data-refdes]');
+    const refdes = g?.getAttribute('data-refdes') ?? null;
+    ctxMenu = { open: true, x: e.clientX, y: e.clientY, refdes };
+  }
+
+  let menuItems = $derived.by(() => {
+    const items: Array<{ label: string; action: () => void }> = [
+      { label: 'Fit view', action: () => fit() },
+      { label: 'Clear selection', action: () => clearSelection() }
+    ];
+    if (ctxMenu.refdes) {
+      const r = ctxMenu.refdes;
+      items.push({
+        label: `Copy refdes (${r})`,
+        action: () => { navigator.clipboard?.writeText(r).catch(() => {}); }
+      });
+    }
+    return items;
+  });
 
   function onDblClick(e: MouseEvent) {
     const sg = (e.target as Element).closest('[data-sheet-uuid]');
@@ -169,6 +196,7 @@
   onauxclick={(e) => { if (e.button === 1) e.preventDefault(); }}
   onclick={onClick}
   ondblclick={onDblClick}
+  oncontextmenu={onContextMenu}
   role="img"
   aria-label="Schematic view"
 >
@@ -185,6 +213,14 @@
     <Breadcrumb sheet={activeSheet} />
   {/if}
 </div>
+
+<ContextMenu
+  open={ctxMenu.open}
+  x={ctxMenu.x}
+  y={ctxMenu.y}
+  items={menuItems}
+  onClose={() => (ctxMenu = { ...ctxMenu, open: false })}
+/>
 
 <style>
   .stage {

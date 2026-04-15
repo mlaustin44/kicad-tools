@@ -2,10 +2,11 @@
   import { untrack } from 'svelte';
   import { project } from '$lib/stores/project';
   import { layerVisibility, layers } from '$lib/stores/layers';
-  import { selection, selectComponent } from '$lib/stores/selection';
+  import { selection, selectComponent, clearSelection } from '$lib/stores/selection';
   import { buildPcbScene, type PcbScene } from '$lib/pcb/scene';
   import { drawPcb, type Viewport } from '$lib/pcb/render';
   import { hitPoint } from '$lib/geom/rtree';
+  import ContextMenu from '$lib/ui/ContextMenu.svelte';
 
   interface Props {
     onCursor?: (p: { x: number; y: number } | null) => void;
@@ -128,6 +129,45 @@
     if (hits.length) selectComponent({ uuid: hits[0]!, source: 'pcb' });
   }
 
+  let ctxMenu = $state<{ open: boolean; x: number; y: number; refdes: string | null }>({
+    open: false, x: 0, y: 0, refdes: null
+  });
+
+  function onContextMenu(e: MouseEvent) {
+    e.preventDefault();
+    if (!canvas || !scene) {
+      ctxMenu = { open: true, x: e.clientX, y: e.clientY, refdes: null };
+      return;
+    }
+    const rect = canvas.getBoundingClientRect();
+    const mx = (e.clientX - rect.left - viewport.x) / viewport.scale;
+    const my = (e.clientY - rect.top - viewport.y) / viewport.scale;
+    const hits = hitPoint(scene.footprintIndex, mx, my);
+    const hit = hits[0];
+    const fp = hit ? scene.footprints.find((f) => f.uuid === hit) : undefined;
+    ctxMenu = {
+      open: true,
+      x: e.clientX,
+      y: e.clientY,
+      refdes: fp?.refdes ?? null
+    };
+  }
+
+  let menuItems = $derived.by(() => {
+    const items: Array<{ label: string; action: () => void }> = [
+      { label: 'Fit view', action: () => fit() },
+      { label: 'Clear selection', action: () => clearSelection() }
+    ];
+    if (ctxMenu.refdes) {
+      const r = ctxMenu.refdes;
+      items.push({
+        label: `Copy refdes (${r})`,
+        action: () => { navigator.clipboard?.writeText(r).catch(() => {}); }
+      });
+    }
+    return items;
+  });
+
   function fit() {
     if (!scene || !canvas) return;
     const rect = canvas.getBoundingClientRect();
@@ -210,8 +250,17 @@
     onpointerleave={onLeave}
     onauxclick={(e) => { if (e.button === 1) e.preventDefault(); }}
     onclick={onClick}
+    oncontextmenu={onContextMenu}
   ></canvas>
 </div>
+
+<ContextMenu
+  open={ctxMenu.open}
+  x={ctxMenu.x}
+  y={ctxMenu.y}
+  items={menuItems}
+  onClose={() => (ctxMenu = { ...ctxMenu, open: false })}
+/>
 
 <style>
   .stage {
