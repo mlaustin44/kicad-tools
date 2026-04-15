@@ -25,6 +25,8 @@ export function drawPcb(
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
 
+  drawGrid(ctx, scene, viewport);
+
   // Draw order: back-to-front — back layers first, inner, then front layers on top.
   // Edge cuts are drawn on top so the outline always reads.
   const backLayerIds = ['B.Cu', 'B.SilkS', 'B.Mask', 'B.Fab', 'B.CrtYd', 'B.Paste'];
@@ -141,6 +143,58 @@ export function drawPcb(
     }
     ctx.restore();
   }
+
+  ctx.restore();
+}
+
+function drawGrid(ctx: CanvasRenderingContext2D, scene: PcbScene, viewport: Viewport): void {
+  const pxPerMm = viewport.scale;
+  // Hide grid when too zoomed-out (lines too dense) — at higher zoom it's still useful.
+  if (pxPerMm < 0.8) return;
+
+  // Pick grid step based on zoom: finer step at higher zoom
+  let stepMm = 1;
+  if (pxPerMm < 2) stepMm = 5;
+  else if (pxPerMm < 10) stepMm = 1;
+  else stepMm = 0.25;
+
+  const bounds = scene.boundsMm;
+  // Extend grid a bit beyond board bounds so user sees it near edges.
+  const pad = Math.max(bounds.w, bounds.h) * 0.2 || 50;
+  const x0 = Math.floor((bounds.x - pad) / stepMm) * stepMm;
+  const y0 = Math.floor((bounds.y - pad) / stepMm) * stepMm;
+  const x1 = Math.ceil((bounds.x + bounds.w + pad) / stepMm) * stepMm;
+  const y1 = Math.ceil((bounds.y + bounds.h + pad) / stepMm) * stepMm;
+
+  ctx.save();
+  ctx.strokeStyle = '#2a303a';
+  ctx.lineWidth = 0.04;
+
+  ctx.beginPath();
+  for (let x = x0; x <= x1; x += stepMm) {
+    ctx.moveTo(x, y0);
+    ctx.lineTo(x, y1);
+  }
+  for (let y = y0; y <= y1; y += stepMm) {
+    ctx.moveTo(x0, y);
+    ctx.lineTo(x1, y);
+  }
+  ctx.stroke();
+
+  // Major gridlines every 10 steps
+  ctx.strokeStyle = '#3a404a';
+  ctx.lineWidth = 0.08;
+  ctx.beginPath();
+  const majorStep = stepMm * 10;
+  for (let x = Math.floor(x0 / majorStep) * majorStep; x <= x1; x += majorStep) {
+    ctx.moveTo(x, y0);
+    ctx.lineTo(x, y1);
+  }
+  for (let y = Math.floor(y0 / majorStep) * majorStep; y <= y1; y += majorStep) {
+    ctx.moveTo(x0, y);
+    ctx.lineTo(x1, y);
+  }
+  ctx.stroke();
 
   ctx.restore();
 }
