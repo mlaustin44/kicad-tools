@@ -5,11 +5,13 @@
   import DropZone from '$lib/ui/DropZone.svelte';
   import Toast from '$lib/ui/Toast.svelte';
   import Inspector from '$lib/ui/Inspector.svelte';
+  import SchematicView from '$lib/views/SchematicView.svelte';
   import { project } from '$lib/stores/project';
 
   let tab = $state('sch');
   let searchOpen = $state(false);
   let fitRequested = $state(0);
+  let activeSheet = $derived.by(() => $project?.sheets[0]?.uuid ?? null);
 
   onMount(() =>
     installKeyboardShortcuts({
@@ -29,7 +31,11 @@
   <Shell {tab} onTabChange={(v) => (tab = v)}>
     {#snippet sidebar()}<div class="panel">sidebar ({tab})</div>{/snippet}
     {#snippet inspector()}<Inspector />{/snippet}
-    <div class="stage">render area ({tab})</div>
+    {#if tab === 'sch'}
+      <SchematicView activeSheetUuid={activeSheet} />
+    {:else}
+      <div class="stage">render area ({tab})</div>
+    {/if}
   </Shell>
 {:else}
   <main class="empty"><DropZone /></main>
