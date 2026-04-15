@@ -7,8 +7,10 @@
   import { theme } from '$lib/stores/theme';
   import { loadGlb, indexByRefdes } from '$lib/three/loader';
   import { loadStep, evictStep } from '$lib/three/step-loader';
+  import { indexByPosition } from '$lib/three/position-index';
   import { computeComponentFrame } from '$lib/three/camera-framing';
   import { pushToast } from '$lib/stores/toasts';
+  import { model3dStatus, markLoading, markReady, markError } from '$lib/stores/model3d';
 
   type PresetView = 'top' | 'bottom' | 'iso';
 
@@ -22,12 +24,29 @@
   let canvas: HTMLCanvasElement | undefined = $state();
 
   let refdesToMesh: Map<string, THREE.Object3D> = new Map();
+  // Reverse lookup for click hits: the raycast returns a leaf mesh, we walk
+  // up parents until one appears here. Works uniformly for name-indexed GLB
+  // and position-indexed STEP.
+  let objToRefdes: WeakMap<THREE.Object3D, string> = new WeakMap();
   // Tracks whichever model is currently on screen (GLB or STEP). Keeping it
   // uniform lets cross-probe / click-hit / framing stay format-agnostic.
   let currentModelUrl: string | null = null;
   let currentModelKind: 'glb' | 'step' | null = null;
   let currentModelGroup: THREE.Group | null = null;
-  let loading = $state(false);
+
+  // Ticks once per second while status.kind === 'loading' so the elapsed
+  // time display can refresh. Separate from status so re-rendering doesn't
+  // stomp on the shared store.
+  let nowTick = $state(Date.now());
+  $effect(() => {
+    if ($model3dStatus.kind !== 'loading') return;
+    const id = setInterval(() => (nowTick = Date.now()), 500);
+    return () => clearInterval(id);
+  });
+  const elapsedSec = $derived.by(() => {
+    if ($model3dStatus.kind !== 'loading') return 0;
+    return Math.max(0, (nowTick - $model3dStatus.startedAt) / 1000);
+  });
 
   let scene: THREE.Scene | null = null;
   let camera: THREE.PerspectiveCamera | null = null;
@@ -178,29 +197,45 @@
 
     if (!url || !kind) return;
 
-    loading = true;
+    markLoading(url);
     const loadPromise = kind === 'step' ? loadStep(url) : loadGlb(url);
 
     loadPromise
       .then((group) => {
+        // Update status regardless of whether the view is still mounted —
+        // the viewer page uses this to show a corner notification when the
+        // user navigated away during a long STEP parse.
+        markReady(url);
         if (currentModelUrl !== url) return; // superseded
         if (!scene) return;
         scene.add(group);
         currentModelGroup = group;
-        refdesToMesh = indexByRefdes(group);
+
+        // STEP: KiCad's export doesn't encode refdes on the product names
+        // occt-import-js exposes (they sit on NEXT_ASSEMBLY_USAGE_OCCURRENCE
+        // instead), so match to footprints by position. GLB from kicad-cli
+        // does encode refdes in mesh names — keep the regex path for that.
+        const footprints = $project?.pcb.footprints ?? [];
+        refdesToMesh = kind === 'step'
+          ? indexByPosition(group, footprints)
+          : indexByRefdes(group);
+        const rev = new WeakMap<THREE.Object3D, string>();
+        for (const [r, o] of refdesToMesh) rev.set(o, r);
+        objToRefdes = rev;
+
         if (refdesToMesh.size === 0) {
           pushToast({
             kind: 'info',
-            message: '3D model loaded, but no refdes labels were found — component picking disabled.'
+            message: '3D model loaded, but no components were matched to refdes — picking disabled.'
           });
         }
         frameWhole();
       })
       .catch((e: unknown) => {
         const msg = e instanceof Error ? e.message : String(e);
+        markError(url, msg);
         pushToast({ kind: 'error', message: `Couldn't load 3D model: ${msg}` });
-      })
-      .finally(() => { loading = false; });
+      });
   });
 
   // Raycast -> selection on click
@@ -214,15 +249,12 @@
     for (const p of picks) {
       let o: THREE.Object3D | null = p.object;
       while (o) {
-        const match = o.name?.match(/^([A-Z]+\d+)/);
-        if (match) {
-          const refdes = match[1];
-          if (refdes) {
-            const comp = $project?.components.find((c) => c.refdes === refdes);
-            if (comp) {
-              selectComponent({ uuid: comp.uuid, source: '3d' });
-              return;
-            }
+        const refdes = objToRefdes.get(o);
+        if (refdes) {
+          const comp = $project?.components.find((c) => c.refdes === refdes);
+          if (comp) {
+            selectComponent({ uuid: comp.uuid, source: '3d' });
+            return;
           }
         }
         o = o.parent;
@@ -309,8 +341,12 @@
       <button type="button" onclick={() => goToPreset('iso')}>Iso</button>
     </div>
   {/if}
-  {#if loading}
-    <div class="loading">Loading 3D model…</div>
+  {#if $model3dStatus.kind === 'loading'}
+    <div class="loading">
+      <div class="spinner" aria-hidden="true"></div>
+      <div>Parsing 3D model…</div>
+      <div class="loading-sub">{elapsedSec.toFixed(1)}s elapsed · large STEP files can take 30-60s</div>
+    </div>
   {/if}
   {#if $project && !hasModel}
     <div class="empty"
@@ -344,11 +380,19 @@
   }
   .loading {
     position: absolute; inset: 0;
-    display: grid; place-items: center;
-    color: var(--kv-text); background: rgba(0, 0, 0, 0.4);
-    font-size: 0.85rem;
+    display: grid; place-items: center; grid-auto-rows: min-content;
+    align-content: center; gap: 0.7rem;
+    color: var(--kv-text); background: rgba(0, 0, 0, 0.55);
+    font-size: 0.9rem;
     pointer-events: none;
   }
+  .loading-sub { color: var(--kv-text-dim); font-size: 0.75rem; }
+  .spinner {
+    width: 36px; height: 36px; border-radius: 50%;
+    border: 3px solid var(--kv-border); border-top-color: var(--kv-accent, #6aa6ff);
+    animation: spin 0.9s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
   .dim { color: var(--kv-text-dim); font-size: 0.85rem; }
   .btn {
     display: inline-block; margin-top: 0.75rem;

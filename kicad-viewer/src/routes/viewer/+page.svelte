@@ -16,6 +16,7 @@
   import { project, componentsByUuid, setProjectRevokingGlb } from '$lib/stores/project';
   import { selection } from '$lib/stores/selection';
   import { leftSidebarTab } from '$lib/stores/leftSidebar';
+  import { model3dStatus, acknowledgeReady } from '$lib/stores/model3d';
   import { loadRecent, clearRecent } from '$lib/stores/recent';
   import { classifyFiles, rootSchematic } from '$lib/loader/blob';
   import { toProject } from '$lib/adapter/adapter';
@@ -227,6 +228,22 @@
 
 <HelpOverlay open={helpOpen} onClose={() => (helpOpen = false)} />
 
+<!-- Corner notification when a 3D model finishes loading while the user is
+     on a different tab. Acknowledged on click (→ switches to 3D) or dismiss. -->
+{#if $model3dStatus.kind === 'ready' && !$model3dStatus.acknowledged && tab !== '3d'}
+  <div class="model3d-pill" role="status">
+    <button
+      class="go"
+      onclick={() => { tab = '3d'; acknowledgeReady(); }}
+    >3D model ready →</button>
+    <button
+      class="dismiss"
+      onclick={() => acknowledgeReady()}
+      aria-label="Dismiss"
+    >×</button>
+  </div>
+{/if}
+
 <Toast />
 
 <style>
@@ -254,4 +271,24 @@
     color: var(--kv-text-dim);
     font-size: 0.9rem;
   }
+  .model3d-pill {
+    position: fixed; right: 18px; bottom: 18px;
+    display: flex; align-items: center; gap: 2px;
+    background: var(--kv-surface); color: var(--kv-text);
+    border: 1px solid var(--kv-accent, #6aa6ff);
+    border-radius: 20px; padding: 2px 2px 2px 10px;
+    font-size: 0.8rem;
+    box-shadow: 0 6px 22px rgba(0, 0, 0, 0.35);
+    z-index: 50;
+  }
+  .model3d-pill .go {
+    background: transparent; border: none; color: var(--kv-accent, #6aa6ff);
+    cursor: pointer; padding: 6px 10px; font-weight: 600; font-size: 0.8rem;
+  }
+  .model3d-pill .dismiss {
+    background: transparent; border: none; color: var(--kv-text-dim);
+    cursor: pointer; padding: 6px 8px;
+    font-size: 1rem; line-height: 1;
+  }
+  .model3d-pill .dismiss:hover { color: var(--kv-text); }
 </style>
