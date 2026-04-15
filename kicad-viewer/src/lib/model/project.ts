@@ -108,7 +108,15 @@ export type GraphicGeom =
   | { kind: 'line'; a: Point; b: Point; widthMm: number }
   | { kind: 'arc'; center: Point; radiusMm: number; startDeg: number; endDeg: number; widthMm: number }
   | { kind: 'polygon'; points: Point[]; widthMm: number; filled: boolean }
-  | { kind: 'text'; position: Point; rotationDeg: number; heightMm: number; text: string };
+  | {
+      kind: 'text';
+      position: Point;
+      rotationDeg: number;
+      heightMm: number;
+      text: string;
+      hAlign?: 'left' | 'center' | 'right';
+      vAlign?: 'top' | 'center' | 'bottom';
+    };
 export interface TrackSeg { layerId: string; a: Point; b: Point; widthMm: number; netName: string | null; }
 export interface Via { position: Point; diameterMm: number; drillMm: number; layerFrom: string; layerTo: string; netName: string | null; }
 export interface Zone { layerId: string; polygon: Point[]; netName: string | null; }

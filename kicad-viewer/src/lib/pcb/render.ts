@@ -932,9 +932,24 @@ function drawGraphic(
     const heightPx = Math.max(0.8, s.heightMm);
     ctx.fillStyle = ctx.strokeStyle;
     ctx.font = `${heightPx}px ui-sans-serif, system-ui, sans-serif`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(s.text, 0, 0);
+    const hAlign = s.hAlign ?? 'center';
+    const vAlign = s.vAlign ?? 'center';
+    ctx.textAlign = hAlign === 'center' ? 'center' : hAlign === 'left' ? 'left' : 'right';
+    const lines = s.text.split(/\\n|\n/);
+    const lineH = heightPx * 1.2;
+    // Vertical anchor relative to the multi-line block's top-left.
+    // We draw each line with textBaseline='alphabetic' based offsets below.
+    ctx.textBaseline = 'alphabetic';
+    const totalH = lineH * lines.length;
+    let blockTop: number;
+    if (vAlign === 'top') blockTop = 0;
+    else if (vAlign === 'bottom') blockTop = -totalH;
+    else blockTop = -totalH / 2;
+    // Baseline sits at ~0.8 of line height below the top of the line box.
+    for (let i = 0; i < lines.length; i++) {
+      const y = blockTop + i * lineH + lineH * 0.8;
+      ctx.fillText(lines[i]!, 0, y);
+    }
     ctx.restore();
   }
 

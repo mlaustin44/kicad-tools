@@ -516,12 +516,15 @@ function drawingToGraphic(d: AnyBoardDrawing): Graphic | null {
     const layerId = d.layer?.name ?? '';
     if (d.hide) return null;
     const heightMm = d.effects?.font?.size?.y ?? 1.0;
+    const j = d.effects?.justify;
     const geom: GraphicGeom = {
       kind: 'text',
       position: { x: d.at?.position?.x ?? 0, y: d.at?.position?.y ?? 0 },
       rotationDeg: d.at?.rotation ?? 0,
       heightMm,
-      text: d.shown_text ?? d.text ?? ''
+      text: d.shown_text ?? d.text ?? '',
+      hAlign: j?.horizontal,
+      vAlign: j?.vertical
     };
     return { layerId, geom };
   }
