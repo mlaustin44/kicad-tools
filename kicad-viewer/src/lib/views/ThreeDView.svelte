@@ -8,10 +8,13 @@
   import { loadGlb, indexByRefdes } from '$lib/three/loader';
   import { pushToast } from '$lib/stores/toasts';
 
+  type PresetView = 'top' | 'bottom' | 'iso';
+
   interface Props {
     fitRequested?: number;
+    presetRequested?: PresetView | null;
   }
-  let { fitRequested = 0 }: Props = $props();
+  let { fitRequested = 0, presetRequested = null }: Props = $props();
 
   let host: HTMLDivElement | undefined = $state();
   let canvas: HTMLCanvasElement | undefined = $state();
@@ -25,6 +28,26 @@
   let renderer: THREE.WebGLRenderer | null = null;
   let controls: OrbitControls | null = null;
   const raycaster = new THREE.Raycaster();
+
+  function goToPreset(preset: PresetView): void {
+    if (!currentGlbGroup || !camera || !controls) return;
+    const box = new THREE.Box3().setFromObject(currentGlbGroup);
+    if (box.isEmpty()) return;
+    const center = box.getCenter(new THREE.Vector3());
+    const size = box.getSize(new THREE.Vector3());
+    const maxDim = Math.max(size.x, size.y, size.z);
+    const dist = maxDim * 1.8;
+
+    controls.target.copy(center);
+    let offset: THREE.Vector3;
+    if (preset === 'top')         offset = new THREE.Vector3(0, dist, 0);
+    else if (preset === 'bottom') offset = new THREE.Vector3(0, -dist, 0);
+    else                          offset = new THREE.Vector3(dist, dist, dist);
+
+    camera.position.copy(center).add(offset);
+    camera.lookAt(center);
+    controls.update();
+  }
 
   function frameToGlb(): void {
     if (!currentGlbGroup || !camera || !controls) return;
@@ -196,6 +219,11 @@
     if (fitRequested > 0) frameToGlb();
   });
 
+  // Preset on external request.
+  $effect(() => {
+    if (presetRequested) goToPreset(presetRequested);
+  });
+
   // External selection -> camera pan to mesh
   $effect(() => {
     const s = $selection;
@@ -216,6 +244,13 @@
 
 <div class="stage" bind:this={host}>
   <canvas bind:this={canvas} onclick={onClick} class:hidden={!$project?.glbUrl}></canvas>
+  {#if $project?.glbUrl}
+    <div class="presets" aria-label="View presets">
+      <button type="button" onclick={() => goToPreset('top')}>Top</button>
+      <button type="button" onclick={() => goToPreset('bottom')}>Bottom</button>
+      <button type="button" onclick={() => goToPreset('iso')}>Iso</button>
+    </div>
+  {/if}
   {#if $project && !$project.glbUrl}
     <div class="empty"
       ondragover={(e) => { e.preventDefault(); }}
@@ -253,4 +288,19 @@
     border-radius: 8px; background: var(--kv-surface); color: var(--kv-text);
     cursor: pointer; font-size: 0.85rem;
   }
+  .presets {
+    position: absolute; top: 10px; right: 10px;
+    display: flex; gap: 4px;
+    background: rgba(0, 0, 0, 0.4);
+    border: 1px solid var(--kv-border);
+    border-radius: 6px;
+    padding: 2px;
+  }
+  .presets button {
+    background: transparent; border: none;
+    padding: 4px 10px; font-size: 0.75rem;
+    color: var(--kv-text); cursor: pointer;
+    border-radius: 4px;
+  }
+  .presets button:hover { background: var(--kv-surface-2); }
 </style>

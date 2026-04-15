@@ -24,6 +24,7 @@
   let tab = $state('sch');
   let searchOpen = $state(false);
   let fitRequested = $state(0);
+  let presetRequested = $state<'top' | 'bottom' | 'iso' | null>(null);
   let activeSheet = $state<string | null>(null);
   let cursorMm = $state<{ x: number; y: number } | null>(null);
   let leftPane = $state<'sch' | 'pcb' | '3d'>('sch');
@@ -85,7 +86,13 @@
           const panel = document.getElementById('layer-panel');
           panel?.querySelector<HTMLInputElement>('input[type="checkbox"]')?.focus();
         });
-      }
+      },
+      onPreset: (preset) => {
+        // Clear-then-set so the effect re-fires when the same key is pressed twice.
+        presetRequested = null;
+        queueMicrotask(() => (presetRequested = preset));
+      },
+      onHelp: () => {}
     });
 
     hydrateFromIdb();
@@ -149,7 +156,7 @@
     {:else if tab === '3d'}
       {#if ThreeDViewAsync}
         {@const View = ThreeDViewAsync}
-        <View {fitRequested} />
+        <View {fitRequested} {presetRequested} />
       {:else}
         <div class="stage-loading">Loading 3D view…</div>
       {/if}
@@ -168,7 +175,7 @@
               <PcbView onCursor={(c) => (cursorMm = c)} {fitRequested} />
             {:else if ThreeDViewAsync}
               {@const View = ThreeDViewAsync}
-              <View {fitRequested} />
+              <View {fitRequested} {presetRequested} />
             {:else}
               <div class="stage-loading">Loading 3D view…</div>
             {/if}
@@ -187,7 +194,7 @@
               <PcbView onCursor={(c) => (cursorMm = c)} {fitRequested} />
             {:else if ThreeDViewAsync}
               {@const View = ThreeDViewAsync}
-              <View {fitRequested} />
+              <View {fitRequested} {presetRequested} />
             {:else}
               <div class="stage-loading">Loading 3D view…</div>
             {/if}

@@ -7,6 +7,8 @@ export function installKeyboardShortcuts(args: {
   onPrevSheet: () => void;
   onNextSheet: () => void;
   onFocusLayers: () => void;
+  onPreset: (preset: 'top' | 'bottom' | 'iso') => void;
+  onHelp: () => void;
 }): () => void {
   const handler = (e: KeyboardEvent) => {
     const target = e.target as HTMLElement;
@@ -25,6 +27,14 @@ export function installKeyboardShortcuts(args: {
       case '[': args.onPrevSheet(); break;
       case ']': args.onNextSheet(); break;
       case 'l': args.onFocusLayers(); break;
+      case 't': args.onPreset('top'); break;
+      case 'b': args.onPreset('bottom'); break;
+      case 'i': args.onPreset('iso'); break;
+      case '?':
+      case 'h':
+        e.preventDefault();
+        args.onHelp();
+        break;
     }
   };
   window.addEventListener('keydown', handler);
