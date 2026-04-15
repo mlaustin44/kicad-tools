@@ -2,7 +2,7 @@
   import { layers, layerVisibility, toggleLayer } from '$lib/stores/layers';
 </script>
 
-<div class="wrap">
+<div class="wrap" id="layer-panel">
   <h4>Layers</h4>
   {#each $layers as l (l.id)}
     <label>

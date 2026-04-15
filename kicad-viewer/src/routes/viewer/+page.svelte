@@ -63,7 +63,13 @@
           activeSheet = p.sheets[idx + 1]!.uuid;
         }
       },
-      onFocusLayers: () => { /* wired in Task 25 */ }
+      onFocusLayers: () => {
+        if (tab !== 'pcb' && tab !== 'split') tab = 'pcb';
+        queueMicrotask(() => {
+          const panel = document.getElementById('layer-panel');
+          panel?.querySelector<HTMLInputElement>('input[type="checkbox"]')?.focus();
+        });
+      }
     });
 
     hydrateFromIdb();

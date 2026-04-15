@@ -1,5 +1,6 @@
 <script lang="ts">
   import { project } from '$lib/stores/project';
+  import { selectSheet } from '$lib/stores/selection';
   import type { Sheet } from '$lib/model/project';
 
   interface Props { activeUuid: string | null; onSelect: (uuid: string) => void; }
@@ -26,7 +27,7 @@
     <button
       class:active={row.sheet.uuid === activeUuid}
       style="padding-left: {row.depth * 12 + 8}px"
-      onclick={() => onSelect(row.sheet.uuid)}
+      onclick={() => { onSelect(row.sheet.uuid); selectSheet({ uuid: row.sheet.uuid, source: 'search' }); }}
     >{row.sheet.name}</button>
   {/each}
 </div>
