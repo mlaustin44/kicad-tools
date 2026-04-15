@@ -20,6 +20,7 @@
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/svelte": "^5.3.1",
     "@types/node": "^25.6.0",
+    "@types/three": "^0.183.1",
     "jsdom": "^29.0.2",
     "svelte": "^5.0.0",
     "svelte-check": "^4.0.0",
@@ -30,6 +31,7 @@
   "dependencies": {
     "fflate": "^0.8.2",
     "flatbush": "^4.5.1",
-    "open-props": "^1.7.23"
+    "open-props": "^1.7.23",
+    "three": "^0.183.2"
   }
 }

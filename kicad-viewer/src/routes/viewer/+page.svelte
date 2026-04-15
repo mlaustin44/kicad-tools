@@ -8,6 +8,7 @@
   import Inspector from '$lib/ui/Inspector.svelte';
   import SchematicView from '$lib/views/SchematicView.svelte';
   import PcbView from '$lib/views/PcbView.svelte';
+  import ThreeDView from '$lib/views/ThreeDView.svelte';
   import SheetTree from '$lib/ui/SheetTree.svelte';
   import LayerPanel from '$lib/ui/LayerPanel.svelte';
   import SearchBar from '$lib/ui/SearchBar.svelte';
@@ -79,6 +80,8 @@
       <SchematicView activeSheetUuid={activeSheet} onNavigateSheet={(u) => (activeSheet = u)} />
     {:else if tab === 'pcb'}
       <PcbView onCursor={(c) => (cursorMm = c)} {fitRequested} />
+    {:else if tab === '3d'}
+      <ThreeDView />
     {:else}
       <div class="stage">render area ({tab})</div>
     {/if}
