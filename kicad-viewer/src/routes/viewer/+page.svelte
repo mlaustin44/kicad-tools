@@ -7,6 +7,7 @@
   import Toast from '$lib/ui/Toast.svelte';
   import Inspector from '$lib/ui/Inspector.svelte';
   import SchematicView from '$lib/views/SchematicView.svelte';
+  import PcbView from '$lib/views/PcbView.svelte';
   import SheetTree from '$lib/ui/SheetTree.svelte';
   import LayerPanel from '$lib/ui/LayerPanel.svelte';
   import SearchBar from '$lib/ui/SearchBar.svelte';
@@ -17,6 +18,7 @@
   let searchOpen = $state(false);
   let fitRequested = $state(0);
   let activeSheet = $state<string | null>(null);
+  let cursorMm = $state<{ x: number; y: number } | null>(null);
 
   $effect(() => {
     const p = $project;
@@ -62,7 +64,7 @@
 <svelte:head><title>Viewer — kicad-viewer</title></svelte:head>
 
 {#if $project}
-  <Shell {tab} onTabChange={(v) => (tab = v)}>
+  <Shell {tab} onTabChange={(v) => (tab = v)} {cursorMm}>
     {#snippet sidebar()}
       {#if tab === 'sch'}
         <SheetTree activeUuid={activeSheet} onSelect={(u) => (activeSheet = u)} />
@@ -75,6 +77,8 @@
     {#snippet inspector()}<Inspector />{/snippet}
     {#if tab === 'sch'}
       <SchematicView activeSheetUuid={activeSheet} onNavigateSheet={(u) => (activeSheet = u)} />
+    {:else if tab === 'pcb'}
+      <PcbView onCursor={(c) => (cursorMm = c)} {fitRequested} />
     {:else}
       <div class="stage">render area ({tab})</div>
     {/if}
