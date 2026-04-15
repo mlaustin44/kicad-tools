@@ -5,6 +5,11 @@
     "noImplicitAny": true,
     "noUncheckedIndexedAccess": true,
     "exactOptionalPropertyTypes": true,
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    // Vendored KiCanvas parser (src/lib/parser/) uses Object.assign in
+    // constructors to inflate classes from parsed s-expressions, so fields
+    // lack initializers by design. Relaxing this one sub-flag keeps the rest
+    // of strict mode intact.
+    "strictPropertyInitialization": false
   }
 }
