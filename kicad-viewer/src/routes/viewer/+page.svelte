@@ -18,7 +18,11 @@
   let activeSheet = $state<string | null>(null);
 
   $effect(() => {
-    if (!activeSheet && $project) activeSheet = $project.sheets[0]?.uuid ?? null;
+    const p = $project;
+    if (!p) { activeSheet = null; return; }
+    if (!activeSheet || !p.sheets.some((s) => s.uuid === activeSheet)) {
+      activeSheet = p.sheets[0]?.uuid ?? null;
+    }
   });
 
   $effect(() => {

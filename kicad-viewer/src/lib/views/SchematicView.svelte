@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from 'svelte';
   import { project, sheetsByUuid, componentsByUuid } from '$lib/stores/project';
   import { selectComponent, selection } from '$lib/stores/selection';
   import { buildSheetSvg } from '$lib/sch/render';
@@ -89,8 +90,9 @@
     if (stageBox.width === 0 && stageBox.height === 0) return;
     const dx = stageBox.width / 2 - (bbox.left + bbox.width / 2 - stageBox.left);
     const dy = stageBox.height / 2 - (bbox.top + bbox.height / 2 - stageBox.top);
-    if (dx === 0 && dy === 0) return;
-    viewport = { x: viewport.x + dx, y: viewport.y + dy, scale: viewport.scale };
+    if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) return;
+    const vp = untrack(() => viewport);
+    viewport = { x: vp.x + dx, y: vp.y + dy, scale: vp.scale };
   });
 </script>
 
