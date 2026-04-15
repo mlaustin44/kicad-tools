@@ -74,10 +74,23 @@
     controls.update();
   }
 
+  function adjustCameraClipping(box: THREE.Box3): void {
+    if (!camera || box.isEmpty()) return;
+    const size = box.getSize(new THREE.Vector3());
+    const maxDim = Math.max(size.x, size.y, size.z) || 1;
+    // Tight near/far bracket gives the depth buffer usable precision, which
+    // is critical for KiCad GLBs where silkscreen sits ~15µm above the mask.
+    // We still leave headroom so orbiting far out doesn't clip the board.
+    camera.near = Math.max(0.001, maxDim * 0.0005);
+    camera.far = Math.max(100, maxDim * 50);
+    camera.updateProjectionMatrix();
+  }
+
   function frameWhole(): void {
     if (!currentModelGroup || !camera || !controls) return;
     const box = new THREE.Box3().setFromObject(currentModelGroup);
     if (box.isEmpty()) return;
+    adjustCameraClipping(box);
     const center = box.getCenter(new THREE.Vector3());
     const size = box.getSize(new THREE.Vector3());
     controls.target.copy(center);
@@ -104,8 +117,17 @@
     camera = new THREE.PerspectiveCamera(45, 1, 0.1, 5000);
     camera.position.set(100, 80, 100);
 
-    renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-    renderer.setPixelRatio(window.devicePixelRatio);
+    // logarithmicDepthBuffer kills the z-fighting that manifests as "melty"
+    // silkscreen/mask when the GLB stacks many near-coplanar layers; pixel
+    // ratio is capped because a KiCad GLB can have thousands of meshes and
+    // the fill cost on a 2x retina surface destroys the frame rate.
+    renderer = new THREE.WebGLRenderer({
+      canvas,
+      antialias: true,
+      logarithmicDepthBuffer: true,
+      powerPreference: 'high-performance'
+    });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
 
     controls = new OrbitControls(camera, canvas);
     controls.enableDamping = true;
