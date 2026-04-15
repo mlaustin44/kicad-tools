@@ -147,6 +147,27 @@
     }
   }
 
+  async function ingestGlbFile(f: File): Promise<void> {
+    if (!/\.glb$/i.test(f.name)) {
+      pushToast({ kind: 'error', message: '3D: expected a .glb file' });
+      return;
+    }
+    const url = URL.createObjectURL(f);
+    project.update((p) => (p ? { ...p, glbUrl: url } : p));
+  }
+
+  function onGlbDrop(ev: DragEvent): void {
+    ev.preventDefault();
+    const f = ev.dataTransfer?.files?.[0];
+    if (f) void ingestGlbFile(f);
+  }
+
+  function onGlbPick(ev: Event): void {
+    const t = ev.target as HTMLInputElement;
+    const f = t.files?.[0];
+    if (f) void ingestGlbFile(f);
+  }
+
   // External selection -> camera pan to mesh
   $effect(() => {
     const s = $selection;
@@ -168,9 +189,17 @@
 <div class="stage" bind:this={host}>
   <canvas bind:this={canvas} onclick={onClick} class:hidden={!$project?.glbUrl}></canvas>
   {#if $project && !$project.glbUrl}
-    <div class="empty">
+    <div class="empty"
+      ondragover={(e) => { e.preventDefault(); }}
+      ondrop={onGlbDrop}
+      role="region"
+      aria-label="Drop a .glb file"
+    >
       <p>No 3D asset loaded.</p>
       <p class="dim">Drop a <code>.glb</code> here or include one in your bundle.</p>
+      <label class="btn">Pick .glb
+        <input type="file" accept=".glb,.gltf" hidden onchange={onGlbPick} />
+      </label>
     </div>
   {/if}
 </div>
@@ -190,4 +219,10 @@
     color: var(--kv-text);
   }
   .dim { color: var(--kv-text-dim); font-size: 0.85rem; }
+  .btn {
+    display: inline-block; margin-top: 0.75rem;
+    padding: 0.5rem 0.9rem; border: 1px solid var(--kv-border);
+    border-radius: 8px; background: var(--kv-surface); color: var(--kv-text);
+    cursor: pointer; font-size: 0.85rem;
+  }
 </style>
