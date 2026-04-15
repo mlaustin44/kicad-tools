@@ -3,7 +3,7 @@ from __future__ import annotations
 import csv
 import io
 import pytest
-from release_generator.bom import reshape_bom
+from release_generator.bom import reshape_bom, _field_name_for_kicad
 
 
 def _csv_str(rows: list[dict]) -> str:
@@ -42,6 +42,28 @@ def test_missing_field_emits_empty_cells_and_warning(capsys):
     assert rows[0]["manufacturer"] == ""
     captured = capsys.readouterr().out
     assert "mpn" in captured.lower() or "missing" in captured.lower()
+
+
+def test_qty_is_synthesized_like_quantity():
+    # Previously 'Qty' was passed to kicad-cli as a field name and came back empty.
+    raw = _csv_str([
+        {"Reference": "R1", "Value": "10k"},
+        {"Reference": "R2", "Value": "10k"},
+    ])
+    out = reshape_bom(raw, group_by=["Value"], columns=["reference", "value", "Qty"])
+    rows = list(csv.DictReader(io.StringIO(out)))
+    assert rows[0]["Qty"] == "2"
+
+
+def test_field_name_preserves_user_casing_and_spaces():
+    # Explicit schematic field names must pass through unchanged; titlecasing
+    # broke 'LCSC Part' -> 'Lcsc part' and 'Substition_OK' -> 'Substition_Ok'.
+    assert _field_name_for_kicad("LCSC Part") == "LCSC Part"
+    assert _field_name_for_kicad("Substition_OK") == "Substition_OK"
+    assert _field_name_for_kicad("Voltage_Rating") == "Voltage_Rating"
+    # Lowercase conveniences still work.
+    assert _field_name_for_kicad("mpn") == "MPN"
+    assert _field_name_for_kicad("part_number") == "Part_Number"
 
 
 def test_sorts_references_naturally():

@@ -17,6 +17,11 @@ from .utils import output_dir_for
 
 _NUM_RE = re.compile(r"(\d+)")
 
+# Column names (case-insensitive) that we synthesize from group size rather
+# than looking up in the kicad-cli CSV. Keep in sync with the skip list in
+# generate_bom().
+_SYNTHESIZED_QUANTITY = {"quantity", "qty"}
+
 
 def _natural_key(s: str):
     """Sort 'R1' < 'R2' < 'R10' instead of 'R1' < 'R10' < 'R2'."""
@@ -69,7 +74,7 @@ def reshape_bom(raw_csv: str, group_by: list[str], columns: list[str]) -> str:
     missing = []
     column_resolutions: list[tuple[str, str | None]] = []
     for col in columns:
-        if col.lower() == "quantity":
+        if col.lower() in _SYNTHESIZED_QUANTITY:
             column_resolutions.append((col, None))  # synthesized
             continue
         actual = _resolve_column(col, fieldnames)
@@ -94,7 +99,7 @@ def reshape_bom(raw_csv: str, group_by: list[str], columns: list[str]) -> str:
         for col, actual in column_resolutions:
             if col.lower() == "reference":
                 out_row[col] = ref_str
-            elif col.lower() == "quantity":
+            elif col.lower() in _SYNTHESIZED_QUANTITY:
                 out_row[col] = str(len(members))
             elif actual:
                 out_row[col] = first.get(actual, "")
@@ -107,7 +112,7 @@ def reshape_bom(raw_csv: str, group_by: list[str], columns: list[str]) -> str:
     # which is for columns absent from the CSV header.
     empty_cols: list[str] = []
     for col, actual in column_resolutions:
-        if actual is None or col.lower() in {"reference", "quantity"}:
+        if actual is None or col.lower() in {"reference"} | _SYNTHESIZED_QUANTITY:
             continue
         if all(not r.get(col) for r in out_rows):
             empty_cols.append(col)
@@ -124,9 +129,18 @@ def reshape_bom(raw_csv: str, group_by: list[str], columns: list[str]) -> str:
     return buf.getvalue()
 
 
-def _titlecase_field(name: str) -> str:
-    """Convert 'mpn' -> 'MPN' or 'part_number' -> 'Part_Number' for kicad-cli --fields."""
-    if name.lower() in {"mpn", "dnp"}:
+def _field_name_for_kicad(name: str) -> str:
+    """Resolve a config column name to the schematic field name passed to kicad-cli.
+
+    KiCad field lookup is case-sensitive, so for any name the user wrote with
+    uppercase letters or spaces we treat it as the literal schematic field name
+    and pass it through verbatim. For purely lowercase snake_case names we keep
+    two conveniences: 'mpn'/'dnp' uppercase, and other names get Title_Case so
+    'part_number' resolves to a 'Part_Number' field.
+    """
+    if any(c.isupper() or c == " " for c in name):
+        return name
+    if name in {"mpn", "dnp"}:
         return name.upper()
     return "_".join(p.capitalize() for p in name.replace("-", "_").split("_"))
 
@@ -145,9 +159,9 @@ def generate_bom(cfg: Config, *, verbose: bool) -> tuple[Path, list[str]]:
     # (excluding synthesized 'quantity' / 'reference').
     requested: list[str] = ["Reference"]
     for src in list(cfg.bom.group_by) + list(cfg.bom.columns):
-        if src.lower() in {"reference", "quantity"}:
+        if src.lower() == "reference" or src.lower() in _SYNTHESIZED_QUANTITY:
             continue
-        pretty = _titlecase_field(src)
+        pretty = _field_name_for_kicad(src)
         if pretty not in requested:
             requested.append(pretty)
 
