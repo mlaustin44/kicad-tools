@@ -137,10 +137,11 @@ export function drawPcb(
 // zoom-in once the world floor kicks in, and hides them at zoom-out once the
 // MAX_WORLD clamp pushes the on-screen height below MIN_READABLE_PX.
 const MIN_READABLE_PX = 6;
-// Track labels stay ~9 CSS px on screen at normal zoom; no world-space floor,
-// so at high zoom the label stays compact (leaving more segments long enough
-// to host it). Capped so the label doesn't grow absurd at very low zoom.
-const TRACK_TARGET_PX = 9;
+// Track labels target ~10 CSS px at normal zoom. A small world-space floor
+// kicks in only at very high zoom (≥40 px/mm) so the label grows gently as
+// you keep zooming in, without hurting short-segment labeling at mid zoom.
+const TRACK_TARGET_PX = 10;
+const TRACK_MIN_WORLD_MM = 0.25;
 const TRACK_MAX_WORLD_MM = 1.2;
 // Pads: fraction of the pad's short dimension for sane defaults, with a small
 // world-size floor for readability at extreme zoom-in and a tight cap so big
@@ -268,10 +269,13 @@ function drawTrackLabel(
   const lengthMm = Math.hypot(dx, dy);
   if (lengthMm <= 0) return;
 
-  // Screen-relative: target ~TRACK_TARGET_PX on screen, capped so the label
-  // can't become absurd at very low zoom. No world-space floor — at high zoom
-  // we want the label compact enough to fit on short segments.
-  const heightMm = Math.min(TRACK_MAX_WORLD_MM, TRACK_TARGET_PX / pxPerMm);
+  // Clamped screen-relative: labels stay ~TRACK_TARGET_PX on screen through
+  // normal zoom, and grow past that at extreme zoom-in (floor kicks in ~40
+  // px/mm). Max cap prevents absurd labels at very low zoom.
+  const heightMm = Math.min(
+    TRACK_MAX_WORLD_MM,
+    Math.max(TRACK_MIN_WORLD_MM, TRACK_TARGET_PX / pxPerMm)
+  );
   if (heightMm * pxPerMm < MIN_READABLE_PX) return;
   const approxWidthMm = t.netName.length * heightMm * 0.55;
   if (approxWidthMm > lengthMm * 0.85) return;
