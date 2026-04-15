@@ -251,6 +251,26 @@
             message: '3D model loaded, but no components were matched to refdes — picking disabled.'
           });
         }
+        // Debug hook for Playwright: exposes a stable surface for asserting
+        // that refdes matching worked and computing screen-space coordinates
+        // of a specific refdes so tests can dispatch real clicks.
+        (globalThis as unknown as { __kv3d?: unknown }).__kv3d = {
+          refdesCount: refdesToMesh.size,
+          refdesList: Array.from(refdesToMesh.keys()),
+          screenPosFor(refdes: string): { x: number; y: number } | null {
+            const obj = refdesToMesh.get(refdes);
+            if (!obj || !camera || !canvas) return null;
+            const box = new THREE.Box3().setFromObject(obj);
+            if (box.isEmpty()) return null;
+            const c = box.getCenter(new THREE.Vector3());
+            const p = c.clone().project(camera);
+            const rect = canvas.getBoundingClientRect();
+            return {
+              x: rect.left + ((p.x + 1) / 2) * rect.width,
+              y: rect.top + ((1 - (p.y + 1) / 2)) * rect.height
+            };
+          }
+        };
         frameWhole();
       })
       .catch((e: unknown) => {
