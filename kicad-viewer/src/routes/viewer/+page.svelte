@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import type { Component } from 'svelte';
   import { get } from 'svelte/store';
   import { installKeyboardShortcuts } from '$lib/keys';
   import Shell from '$lib/ui/Shell.svelte';
@@ -8,7 +9,6 @@
   import Inspector from '$lib/ui/Inspector.svelte';
   import SchematicView from '$lib/views/SchematicView.svelte';
   import PcbView from '$lib/views/PcbView.svelte';
-  import ThreeDView from '$lib/views/ThreeDView.svelte';
   import SheetTree from '$lib/ui/SheetTree.svelte';
   import LayerPanel from '$lib/ui/LayerPanel.svelte';
   import NetsPanel from '$lib/ui/NetsPanel.svelte';
@@ -28,6 +28,20 @@
   let cursorMm = $state<{ x: number; y: number } | null>(null);
   let leftPane = $state<'sch' | 'pcb' | '3d'>('sch');
   let rightPane = $state<'sch' | 'pcb' | '3d'>('pcb');
+
+  let ThreeDViewAsync = $state<Component | null>(null);
+
+  async function loadThreeD(): Promise<void> {
+    if (ThreeDViewAsync) return;
+    const mod = await import('$lib/views/ThreeDView.svelte');
+    ThreeDViewAsync = mod.default as unknown as Component;
+  }
+
+  $effect(() => {
+    if (tab === '3d' || (tab === 'split' && (leftPane === '3d' || rightPane === '3d'))) {
+      void loadThreeD();
+    }
+  });
 
   $effect(() => {
     const p = $project;
@@ -133,7 +147,12 @@
     {:else if tab === 'pcb'}
       <PcbView onCursor={(c) => (cursorMm = c)} {fitRequested} />
     {:else if tab === '3d'}
-      <ThreeDView />
+      {#if ThreeDViewAsync}
+        {@const View = ThreeDViewAsync}
+        <View />
+      {:else}
+        <div class="stage-loading">Loading 3D view…</div>
+      {/if}
     {:else if tab === 'split'}
       <SplitPane>
         {#snippet left()}
@@ -147,8 +166,11 @@
               <SchematicView activeSheetUuid={activeSheet} onNavigateSheet={(u) => (activeSheet = u)} />
             {:else if leftPane === 'pcb'}
               <PcbView onCursor={(c) => (cursorMm = c)} />
+            {:else if ThreeDViewAsync}
+              {@const View = ThreeDViewAsync}
+              <View />
             {:else}
-              <ThreeDView />
+              <div class="stage-loading">Loading 3D view…</div>
             {/if}
           </div>
         {/snippet}
@@ -163,8 +185,11 @@
               <SchematicView activeSheetUuid={activeSheet} onNavigateSheet={(u) => (activeSheet = u)} />
             {:else if rightPane === 'pcb'}
               <PcbView onCursor={(c) => (cursorMm = c)} />
+            {:else if ThreeDViewAsync}
+              {@const View = ThreeDViewAsync}
+              <View />
             {:else}
-              <ThreeDView />
+              <div class="stage-loading">Loading 3D view…</div>
             {/if}
           </div>
         {/snippet}
@@ -202,4 +227,11 @@
   .pcb-sidebar { display: grid; grid-template-rows: auto 1fr; min-height: 0; height: 100%; }
   .pcb-sidebar > :global(*:nth-child(1)) { border-bottom: 1px solid var(--kv-border); }
   .pcb-sidebar > :global(*:nth-child(2)) { min-height: 0; }
+  .stage-loading {
+    display: grid; place-items: center;
+    width: 100%; height: 100%;
+    background: var(--kv-render-bg);
+    color: var(--kv-text-dim);
+    font-size: 0.9rem;
+  }
 </style>
