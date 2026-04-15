@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
+  import { installKeyboardShortcuts } from '$lib/keys';
   import Shell from '$lib/ui/Shell.svelte';
   import DropZone from '$lib/ui/DropZone.svelte';
   import Toast from '$lib/ui/Toast.svelte';
@@ -6,6 +8,19 @@
   import { project } from '$lib/stores/project';
 
   let tab = $state('sch');
+  let searchOpen = $state(false);
+  let fitRequested = $state(0);
+
+  onMount(() =>
+    installKeyboardShortcuts({
+      setTab: (t) => (tab = t),
+      onSearch: () => (searchOpen = true),
+      onFit: () => fitRequested++,
+      onPrevSheet: () => { /* wired in Task 20 */ },
+      onNextSheet: () => { /* wired in Task 20 */ },
+      onFocusLayers: () => { /* wired in Task 25 */ }
+    })
+  );
 </script>
 
 <svelte:head><title>Viewer — kicad-viewer</title></svelte:head>
