@@ -113,7 +113,7 @@ export function drawPcb(
         ctx.save();
         ctx.translate(fp.position.x, fp.position.y);
         if (fp.side === 'bottom') ctx.scale(-1, 1);
-        ctx.rotate((fp.rotationDeg * Math.PI) / 180);
+        ctx.rotate((-fp.rotationDeg * Math.PI) / 180);
         ctx.fillStyle = l.defaultColor;
         drawPadShape(ctx, p);
         ctx.restore();
@@ -535,14 +535,17 @@ function drawPadLabel(
     && pad.netName.length * netH * 0.55 <= Math.max(sz.w, sz.h) * 1.4;
 
   // Compute the pad's world-frame center for collision bookkeeping.
-  const fpCos = Math.cos((fp.rotationDeg * Math.PI) / 180);
-  const fpSin = Math.sin((fp.rotationDeg * Math.PI) / 180);
+  // KiCad's rotation convention is opposite of Canvas/math (CCW-positive on
+  // Y-down screen vs CW). Negate the angle so the local→world math here
+  // matches what ctx.rotate(-rotationDeg) produces in the draw passes.
+  const fpCos = Math.cos((-fp.rotationDeg * Math.PI) / 180);
+  const fpSin = Math.sin((-fp.rotationDeg * Math.PI) / 180);
   const mirror = fp.side === 'bottom' ? -1 : 1;
   const localX = pad.positionMm.x * mirror;
   const worldCx = fp.position.x + fpCos * localX - fpSin * pad.positionMm.y;
   const worldCy = fp.position.y + fpSin * localX + fpCos * pad.positionMm.y;
 
-  const worldDeg = fp.side === 'bottom' ? -fp.rotationDeg : fp.rotationDeg;
+  const worldDeg = fp.side === 'bottom' ? fp.rotationDeg : -fp.rotationDeg;
   const norm = ((worldDeg % 360) + 360) % 360;
   const flip = norm > 90 && norm < 270;
 
@@ -566,7 +569,7 @@ function drawPadLabel(
   ctx.save();
   ctx.translate(fp.position.x, fp.position.y);
   if (fp.side === 'bottom') ctx.scale(-1, 1);
-  ctx.rotate((fp.rotationDeg * Math.PI) / 180);
+  ctx.rotate((-fp.rotationDeg * Math.PI) / 180);
   ctx.translate(pad.positionMm.x, pad.positionMm.y);
   if (flip) ctx.rotate(Math.PI);
 
@@ -743,7 +746,7 @@ function drawDrillHoles(ctx: CanvasRenderingContext2D, scene: PcbScene): void {
       ctx.save();
       ctx.translate(fp.position.x, fp.position.y);
       if (fp.side === 'bottom') ctx.scale(-1, 1);
-      ctx.rotate((fp.rotationDeg * Math.PI) / 180);
+      ctx.rotate((-fp.rotationDeg * Math.PI) / 180);
       ctx.beginPath();
       ctx.arc(pad.positionMm.x, pad.positionMm.y, pad.drillMm / 2, 0, Math.PI * 2);
       ctx.fill();
@@ -799,7 +802,7 @@ function drawLayer(
     ctx.save();
     ctx.translate(fp.position.x, fp.position.y);
     if (fp.side === 'bottom') ctx.scale(-1, 1);
-    ctx.rotate((fp.rotationDeg * Math.PI) / 180);
+    ctx.rotate((-fp.rotationDeg * Math.PI) / 180);
     drawPadShape(ctx, pad);
     ctx.restore();
   }
@@ -885,7 +888,7 @@ function drawGraphic(
   ctx.save();
   ctx.translate(at.x, at.y);
   if (side === 'bottom') ctx.scale(-1, 1); // mirror for bottom side
-  ctx.rotate((rotDeg * Math.PI) / 180);
+  ctx.rotate((-rotDeg * Math.PI) / 180);
 
   if (s.kind === 'line') {
     ctx.lineWidth = Math.max(0.05, s.widthMm);
@@ -941,7 +944,7 @@ function drawGraphicText(
 ): void {
   ctx.save();
   ctx.translate(s.position.x, s.position.y);
-  ctx.rotate((s.rotationDeg * Math.PI) / 180);
+  ctx.rotate((-s.rotationDeg * Math.PI) / 180);
   // For bottom-side footprints, the outer transform mirrored the canvas X axis
   // to flip silk/fab geometry. For text we want it to read top-view correctly,
   // so counter-mirror here.
