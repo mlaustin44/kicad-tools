@@ -3,7 +3,7 @@
   import * as THREE from 'three';
   import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
   import { project, setProjectGlbUrl } from '$lib/stores/project';
-  import { selection, selectComponent } from '$lib/stores/selection';
+  import { selection, selectComponent, clearSelection } from '$lib/stores/selection';
   import { theme } from '$lib/stores/theme';
   import { loadGlb, indexByRefdes } from '$lib/three/loader';
   import { pushToast } from '$lib/stores/toasts';
@@ -191,6 +191,8 @@
         o = o.parent;
       }
     }
+    // No hit on any component mesh — treat as a click on empty space.
+    clearSelection();
   }
 
   async function ingestGlbFile(f: File): Promise<void> {

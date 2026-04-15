@@ -1,6 +1,6 @@
 <script lang="ts">
   import { untrack } from 'svelte';
-  import { project } from '$lib/stores/project';
+  import { project, componentsByRefdes } from '$lib/stores/project';
   import { layerVisibility, layers } from '$lib/stores/layers';
   import { selection, selectComponent, clearSelection } from '$lib/stores/selection';
   import { buildPcbScene, type PcbScene } from '$lib/pcb/scene';
@@ -32,8 +32,14 @@
     if (!canvas || !scene) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
-    const sel = $selection?.kind === 'component' ? $selection.uuid : null;
-    drawPcb(ctx, scene, $layers, $layerVisibility, viewport, sel, highlightedNet);
+    // Translate component UUID to footprint UUID (they differ in KiCad).
+    let selFpUuid: string | null = null;
+    if ($selection?.kind === 'component') {
+      const comp = $project?.components.find((c) => c.uuid === $selection.uuid);
+      const fp = comp ? scene.footprints.find((f) => f.refdes === comp.refdes) : undefined;
+      selFpUuid = fp?.uuid ?? null;
+    }
+    drawPcb(ctx, scene, $layers, $layerVisibility, viewport, selFpUuid, highlightedNet);
   }
 
   function resizeCanvas() {
@@ -126,7 +132,17 @@
     const mx = (e.clientX - rect.left - viewport.x) / viewport.scale;
     const my = (e.clientY - rect.top - viewport.y) / viewport.scale;
     const hits = hitPoint(scene.footprintIndex, mx, my);
-    if (hits.length) selectComponent({ uuid: hits[0]!, source: 'pcb' });
+    // Scene indexes by footprint UUID, but Inspector lookups key by component
+    // (symbol) UUID. KiCad keeps these separate, so resolve via refdes.
+    const fpUuid = hits[0];
+    if (fpUuid) {
+      const fp = scene.footprints.find((f) => f.uuid === fpUuid);
+      const comp = fp ? $componentsByRefdes.get(fp.refdes) : undefined;
+      if (comp) selectComponent({ uuid: comp.uuid, source: 'pcb' });
+      else clearSelection();
+    } else {
+      clearSelection();
+    }
   }
 
   let ctxMenu = $state<{ open: boolean; x: number; y: number; refdes: string | null }>({
@@ -225,7 +241,10 @@
     const s = $selection;
     if (!s || s.kind !== 'component' || s.source === 'pcb') return;
     if (!scene || !canvas) return;
-    const fp = scene.footprints.find((f) => f.uuid === s.uuid);
+    // s.uuid is a component (symbol) UUID; resolve to footprint via refdes.
+    const comp = $project?.components.find((c) => c.uuid === s.uuid);
+    if (!comp) return;
+    const fp = scene.footprints.find((f) => f.refdes === comp.refdes);
     if (!fp) return;
     const rect = canvas.getBoundingClientRect();
     if (rect.width <= 0 || rect.height <= 0) return;

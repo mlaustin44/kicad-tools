@@ -56,9 +56,14 @@
     }
   });
 
+  // When selection comes from the search bar, jump to schematic and the containing
+  // sheet. PCB and 3D clicks stay in their own view — those views handle their own
+  // cross-probing highlight/pan, and yanking the tab away mid-interaction forces an
+  // expensive re-parse of the root schematic.
   $effect(() => {
     const s = $selection;
-    if (!s || s.kind !== 'component' || s.source === 'sch') return;
+    if (!s || s.kind !== 'component') return;
+    if (s.source !== 'search') return;
     const c = $componentsByUuid.get(s.uuid);
     if (!c) return;
     if (activeSheet !== c.sheetUuid) activeSheet = c.sheetUuid;
