@@ -129,18 +129,20 @@ export function drawPcb(
 
 // ---------- copper labels (net names on tracks, pads, zones; pad numbers) ----------
 
-// Screen-relative label sizing: the numbers are in CSS px, converted to world
-// mm via the current zoom.
-const TRACK_LABEL_PX = 10;
-const PAD_NUM_PX = 11;
-const PAD_NET_PX = 9;
-const ZONE_LABEL_PX = 14;
-// Tracks and pad net labels are only useful when you're zoomed in enough to
-// read them without covering everything else. Zone labels stay visible a bit
-// earlier because the polygons they sit on are themselves big.
-const MIN_ZOOM_FOR_TRACK_LABELS = 6;
-const MIN_ZOOM_FOR_PAD_NET = 8;
-const MIN_ZOOM_FOR_ZONE_LABELS = 2;
+// Feature-relative label sizing: each label is sized as a fraction of the
+// feature it sits on (track width, pad size, zone extent) and clamped so it's
+// not absurdly big or too small to read. The readability gate (MIN_READABLE_PX)
+// is what naturally hides labels when the board is zoomed out — at low zoom,
+// feature-proportional text is sub-pixel and we skip it; at high zoom the
+// label grows alongside the feature it's describing.
+const MIN_READABLE_PX = 7;
+const TRACK_LABEL_FRACTION = 0.75; // fraction of track width
+const TRACK_LABEL_MAX_MM = 1.5;
+const PAD_NUM_FRACTION = 0.45; // fraction of pad min dimension
+const PAD_NET_FRACTION = 0.32;
+const ZONE_LABEL_FRACTION = 0.05; // fraction of zone bbox min dim
+const ZONE_LABEL_MIN_MM = 1.2;
+const ZONE_LABEL_MAX_MM = 6;
 // Minimum world-space separation between two labels for the *same* net.
 // Prevents a long bus being labeled at every segment midpoint.
 const SAME_NET_MIN_SPACING_MM = 30;
@@ -184,8 +186,6 @@ function drawCopperLabels(
   visible: Map<string, boolean>,
   pxPerMm: number
 ): void {
-  if (pxPerMm < MIN_ZOOM_FOR_ZONE_LABELS) return;
-
   const copperIds: string[] = [
     'F.Cu',
     ...layers.filter((l) => l.type === 'In.Cu').map((l) => l.id),
@@ -194,9 +194,8 @@ function drawCopperLabels(
   const seenPads = new Set<Pad>();
   const placed: LabelBox[] = [];
 
-  // Zones first: they cover large areas, and any track/pad label that lands
-  // on top of a zone label just becomes unreadable. One label per
-  // (layer, net) at the largest polygon's centroid.
+  // Zones first — they cover large areas; anything layered on top becomes
+  // unreadable, so let them claim space early.
   for (const id of copperIds) {
     const l = layers.find((x) => x.id === id);
     if (!l || !visible.get(l.id)) continue;
@@ -215,9 +214,6 @@ function drawCopperLabels(
     }
   }
 
-  // Pads: numbers always (subject to readable size); net names only at higher
-  // zoom so they don't clutter far-out views.
-  const showPadNets = pxPerMm >= MIN_ZOOM_FOR_PAD_NET;
   for (const id of copperIds) {
     const l = layers.find((x) => x.id === id);
     if (!l || !visible.get(l.id)) continue;
@@ -226,24 +222,21 @@ function drawCopperLabels(
     for (const { fp, pad } of buckets.pads) {
       if (seenPads.has(pad)) continue;
       seenPads.add(pad);
-      drawPadLabel(ctx, fp, pad, pxPerMm, showPadNets, placed);
+      drawPadLabel(ctx, fp, pad, pxPerMm, placed);
     }
   }
 
-  // Tracks last: skipped entirely at low zoom, collision-filtered at high zoom.
-  // Per-net centers lets us enforce a minimum spacing between labels on the
-  // same net so a single long trace gets one label, not one per segment.
-  if (pxPerMm >= MIN_ZOOM_FOR_TRACK_LABELS) {
-    const perNetCenters = new Map<string, Array<{ x: number; y: number }>>();
-    for (const id of copperIds) {
-      const l = layers.find((x) => x.id === id);
-      if (!l || !visible.get(l.id)) continue;
-      const buckets = scene.byLayer.get(l.id);
-      if (!buckets) continue;
-      for (const t of buckets.tracks) {
-        if (!t.netName) continue;
-        drawTrackLabel(ctx, t, pxPerMm, placed, perNetCenters);
-      }
+  // Tracks last. Per-net centers enforces minimum spacing so a single long
+  // trace gets one label, not one per segment.
+  const perNetCenters = new Map<string, Array<{ x: number; y: number }>>();
+  for (const id of copperIds) {
+    const l = layers.find((x) => x.id === id);
+    if (!l || !visible.get(l.id)) continue;
+    const buckets = scene.byLayer.get(l.id);
+    if (!buckets) continue;
+    for (const t of buckets.tracks) {
+      if (!t.netName) continue;
+      drawTrackLabel(ctx, t, pxPerMm, placed, perNetCenters);
     }
   }
 }
@@ -261,10 +254,12 @@ function drawTrackLabel(
   const lengthMm = Math.hypot(dx, dy);
   if (lengthMm <= 0) return;
 
-  const heightMm = TRACK_LABEL_PX / pxPerMm;
+  // Feature-relative: size to the track width so the label reads as "belonging
+  // to" that trace. Skip if the label would be smaller than MIN_READABLE_PX
+  // on screen — this is the natural zoom gate.
+  const heightMm = Math.min(t.widthMm * TRACK_LABEL_FRACTION, TRACK_LABEL_MAX_MM);
+  if (heightMm * pxPerMm < MIN_READABLE_PX) return;
   const approxWidthMm = t.netName.length * heightMm * 0.55;
-  // Need the segment to fit the label with a margin on each side; keeps
-  // labels off short stubs between vias.
   if (approxWidthMm > lengthMm * 0.85) return;
 
   const mx = (t.a.x + t.b.x) / 2;
@@ -310,15 +305,23 @@ function drawPadLabel(
   fp: FootprintGeom,
   pad: Pad,
   pxPerMm: number,
-  showNet: boolean,
   placed: LabelBox[]
 ): void {
   const { sizeMm: sz } = pad;
   if (sz.w <= 0 || sz.h <= 0) return;
 
-  const numH = PAD_NUM_PX / pxPerMm;
+  // Feature-relative: pad number sized from the pad's smaller dimension so it
+  // always fits. Readability gate: if the pad is smaller than ~15px on screen,
+  // don't draw anything.
   const minDim = Math.min(sz.w, sz.h);
-  if (numH > minDim * 1.3) return;
+  const numH = minDim * PAD_NUM_FRACTION;
+  if (numH * pxPerMm < MIN_READABLE_PX) return;
+  // Show the net name only when the pad is big enough on screen that two lines
+  // of text fit comfortably — otherwise the number alone stays legible.
+  const netH = minDim * PAD_NET_FRACTION;
+  const showNet = pad.netName !== null && pad.netName !== undefined
+    && netH * pxPerMm >= MIN_READABLE_PX
+    && pad.netName.length * netH * 0.55 <= Math.max(sz.w, sz.h) * 1.1;
 
   // Compute the pad's world-frame center for collision bookkeeping.
   const fpCos = Math.cos((fp.rotationDeg * Math.PI) / 180);
@@ -359,7 +362,6 @@ function drawPadLabel(
     ctx.strokeText(pad.number, 0, -numH * 0.6);
     ctx.fillText(pad.number, 0, -numH * 0.6);
 
-    const netH = PAD_NET_PX / pxPerMm;
     ctx.font = `${netH}px ui-sans-serif, system-ui, sans-serif`;
     ctx.lineWidth = netH * 0.22;
     ctx.strokeText(pad.netName, 0, netH * 0.7);
@@ -383,8 +385,29 @@ function drawZoneLabel(
 ): void {
   const c = polygonCentroid(poly);
   if (!c) return;
-  const heightMm = ZONE_LABEL_PX / pxPerMm;
+
+  // Feature-relative: base height on the zone's bbox so bigger zones (ground
+  // pours covering most of the board) get bigger labels, smaller copper
+  // islands get smaller ones. Clamped to a sane range.
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const p of poly) {
+    if (p.x < minX) minX = p.x;
+    if (p.x > maxX) maxX = p.x;
+    if (p.y < minY) minY = p.y;
+    if (p.y > maxY) maxY = p.y;
+  }
+  const bboxMin = Math.min(maxX - minX, maxY - minY);
+  const heightMm = Math.min(
+    ZONE_LABEL_MAX_MM,
+    Math.max(ZONE_LABEL_MIN_MM, bboxMin * ZONE_LABEL_FRACTION)
+  );
+  if (heightMm * pxPerMm < MIN_READABLE_PX) return;
+
   const approxWidthMm = netName.length * heightMm * 0.55;
+  // Don't draw a zone label that overflows the zone's bbox — looks like it
+  // belongs to something else.
+  if (approxWidthMm > (maxX - minX) * 0.95) return;
+
   const box = rotatedLabelBox(c.x, c.y, approxWidthMm, heightMm * 1.2, 0);
   if (placed.some((p) => bboxesOverlap(p, box))) return;
   placed.push(box);
