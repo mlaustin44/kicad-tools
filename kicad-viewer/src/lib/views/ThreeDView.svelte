@@ -236,8 +236,13 @@
     const target = new THREE.Vector3();
     mesh.getWorldPosition(target);
     untrack(() => {
-      controls!.target.copy(target);
-      // Keep the existing camera direction; OrbitControls will redraw.
+      if (!controls || !camera) return;
+      // Move the camera by the same delta so orbit radius is preserved
+      // and the selected subject actually enters the frustum.
+      const delta = target.clone().sub(controls.target);
+      controls.target.copy(target);
+      camera.position.add(delta);
+      controls.update();
     });
   });
 </script>
