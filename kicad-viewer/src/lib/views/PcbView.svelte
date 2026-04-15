@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from 'svelte';
   import { project } from '$lib/stores/project';
   import { layerVisibility, layers } from '$lib/stores/layers';
   import { selection, selectComponent } from '$lib/stores/selection';
@@ -19,12 +20,17 @@
 
   const scene = $derived.by<PcbScene | null>(() => ($project ? buildPcbScene($project) : null));
 
+  let highlightedNet = $derived.by<string | null>(() => {
+    if ($selection?.kind === 'net') return $selection.name;
+    return null;
+  });
+
   function redraw() {
     if (!canvas || !scene) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
     const sel = $selection?.kind === 'component' ? $selection.uuid : null;
-    drawPcb(ctx, scene, $layers, $layerVisibility, viewport, sel);
+    drawPcb(ctx, scene, $layers, $layerVisibility, viewport, sel, highlightedNet);
   }
 
   function resizeCanvas() {
@@ -145,6 +151,24 @@
     if (scene) {
       queueMicrotask(fit);
     }
+  });
+
+  // External component selection (from Schematic, search, etc.) — recenter PCB on it.
+  $effect(() => {
+    const s = $selection;
+    if (!s || s.kind !== 'component' || s.source === 'pcb') return;
+    if (!scene || !canvas) return;
+    const fp = scene.footprints.find((f) => f.uuid === s.uuid);
+    if (!fp) return;
+    const rect = canvas.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return;
+    const current = untrack(() => viewport);
+    const cx = fp.position.x;
+    const cy = fp.position.y;
+    const nextX = rect.width / 2 - cx * current.scale;
+    const nextY = rect.height / 2 - cy * current.scale;
+    if (Math.abs(nextX - current.x) < 0.5 && Math.abs(nextY - current.y) < 0.5) return;
+    viewport = { x: nextX, y: nextY, scale: current.scale };
   });
 </script>
 

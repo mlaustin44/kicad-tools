@@ -13,7 +13,8 @@ export function drawPcb(
   layers: LayerInfo[],
   visible: Map<string, boolean>,
   viewport: Viewport,
-  selectedFootprint?: string | null
+  selectedFootprint?: string | null,
+  highlightedNet?: string | null
 ): void {
   const { width, height } = ctx.canvas;
   ctx.clearRect(0, 0, width, height);
@@ -53,6 +54,28 @@ export function drawPcb(
       ctx.strokeStyle = '#6aa6ff';
       ctx.lineWidth = Math.max(0.1, 2 / viewport.scale);
       ctx.strokeRect(fp.bboxMm.x, fp.bboxMm.y, fp.bboxMm.w, fp.bboxMm.h);
+    }
+  }
+
+  if (highlightedNet) {
+    ctx.strokeStyle = '#ffd54a';
+    // Walk all tracks (across layers/buckets) whose netName matches
+    for (const [, buckets] of scene.byLayer) {
+      for (const t of buckets.tracks) {
+        if (t.netName !== highlightedNet) continue;
+        ctx.lineWidth = t.widthMm + 0.1;
+        ctx.beginPath();
+        ctx.moveTo(t.a.x, t.a.y);
+        ctx.lineTo(t.b.x, t.b.y);
+        ctx.stroke();
+      }
+      // Vias on the net, too (for through-hole connections)
+      for (const v of buckets.vias) {
+        if (v.netName !== highlightedNet) continue;
+        ctx.beginPath();
+        ctx.arc(v.position.x, v.position.y, v.diameterMm / 2 + 0.05, 0, Math.PI * 2);
+        ctx.stroke();
+      }
     }
   }
 
