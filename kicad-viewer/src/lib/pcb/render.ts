@@ -1,5 +1,5 @@
 import type { PcbScene } from './scene';
-import type { LayerInfo, GraphicGeom, Pad, Point, TrackSeg, FootprintGeom } from '$lib/model/project';
+import type { LayerInfo, GraphicGeom, Pad, Point, TrackSeg, Via, FootprintGeom } from '$lib/model/project';
 import { computeDrawOrder } from './draw-order';
 import { classifyLayer } from './layer-side';
 
@@ -151,6 +151,14 @@ const PAD_NET_MIN_DIM_MM = 1.8;
 const ZONE_LABEL_FRACTION = 0.05; // fraction of zone bbox min dim
 const ZONE_LABEL_MIN_MM = 1.2;
 const ZONE_LABEL_MAX_MM = 6;
+// Vias are small, so labels sit on top of them with a dark halo. Height scales
+// with diameter (so 0.6mm vias read as tiny, 1.5mm vias read comfortably) and
+// is clamped to a readable range. Vias are only labeled past a higher zoom
+// floor than tracks — they need the zoom to actually be legible.
+const VIA_LABEL_FRACTION = 0.7;
+const VIA_LABEL_MIN_MM = 0.35;
+const VIA_LABEL_MAX_MM = 1.0;
+const VIA_LABEL_MIN_SCREEN_PX = 8;
 // Minimum on-screen separation between two labels for the *same* net. Using
 // screen space (not world space) means dense labels at high zoom and wide
 // spacing at low zoom — proportional to how much board you can actually see.
@@ -237,6 +245,20 @@ function drawCopperLabels(
     }
   }
 
+  // Vias that touch the active layer. Walk every bucket to find them because
+  // buildPcbScene only files each via under its layerFrom — so inner-active
+  // layers wouldn't otherwise see through-hole vias.
+  const seenVias = new Set<Via>();
+  for (const [, buckets] of scene.byLayer) {
+    for (const v of buckets.vias) {
+      if (seenVias.has(v)) continue;
+      seenVias.add(v);
+      if (!v.netName) continue;
+      if (!viaTouchesActive(v, activeLayer)) continue;
+      drawViaLabel(ctx, v, pxPerMm, placed);
+    }
+  }
+
   // Tracks last. Per-net centers enforces minimum spacing so a single long
   // trace gets one label, not one per segment.
   const perNetCenters = new Map<string, Array<{ x: number; y: number }>>();
@@ -250,6 +272,19 @@ function drawCopperLabels(
       drawTrackLabel(ctx, t, pxPerMm, placed, perNetCenters);
     }
   }
+}
+
+function viaTouchesActive(v: Via, activeLayer: string): boolean {
+  if (v.layerFrom === activeLayer || v.layerTo === activeLayer) return true;
+  // Through-hole via (F.Cu <-> B.Cu) electrically passes every copper layer in
+  // between, so label it on inner copper when active.
+  if (
+    v.layerFrom === 'F.Cu' &&
+    v.layerTo === 'B.Cu' &&
+    activeLayer.endsWith('.Cu')
+  )
+    return true;
+  return false;
 }
 
 function drawTrackLabel(
@@ -334,6 +369,41 @@ function drawTrackLabel(
   ctx.lineWidth = heightMm * 0.25;
   ctx.strokeText(t.netName, 0, 0);
   ctx.fillText(t.netName, 0, 0);
+  ctx.restore();
+}
+
+function drawViaLabel(
+  ctx: CanvasRenderingContext2D,
+  v: Via,
+  pxPerMm: number,
+  placed: LabelBox[]
+): void {
+  if (!v.netName || v.diameterMm <= 0) return;
+
+  // Feature-relative: height scales with via diameter so small vias stay
+  // subtle while bigger power vias get readable labels.
+  const heightMm = Math.min(
+    VIA_LABEL_MAX_MM,
+    Math.max(v.diameterMm * VIA_LABEL_FRACTION, VIA_LABEL_MIN_MM)
+  );
+  // Don't even try at low zoom — via labels are useful only when you're
+  // zoomed in enough to actually read them without overlapping neighbors.
+  if (heightMm * pxPerMm < VIA_LABEL_MIN_SCREEN_PX) return;
+
+  const approxWidthMm = v.netName.length * heightMm * 0.55;
+  const box = rotatedLabelBox(v.position.x, v.position.y, approxWidthMm, heightMm * 1.2, 0);
+  if (placed.some((p) => bboxesOverlap(p, box))) return;
+  placed.push(box);
+
+  ctx.save();
+  ctx.font = `${heightMm}px ui-sans-serif, system-ui, sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = 'rgba(255,255,255,0.95)';
+  ctx.strokeStyle = 'rgba(0,0,0,0.7)';
+  ctx.lineWidth = heightMm * 0.3;
+  ctx.strokeText(v.netName, v.position.x, v.position.y);
+  ctx.fillText(v.netName, v.position.x, v.position.y);
   ctx.restore();
 }
 
