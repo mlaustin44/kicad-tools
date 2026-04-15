@@ -11,7 +11,7 @@ const fake: Project = {
   source: 'raw',
   components: [{
     uuid: 'u1', refdes: 'R1', value: '10k', footprint: 'R_0603',
-    sheetUuid: 's1', dnp: false, pins: [],
+    sheetUuid: 's1', dnp: false, pins: [], properties: {},
     mpn: 'ABC', manufacturer: 'Acme', datasheet: 'https://x'
   }]
 };

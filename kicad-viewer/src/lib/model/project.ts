@@ -18,6 +18,22 @@ export interface Sheet {
   componentUuids: Uuid[];
   boundsMm: Rect;
   rawSch?: string | undefined;        // original S-expression source for deferred render parsing
+  paper?: PaperSize | undefined;      // paper size enum (A4/A3/USLetter/etc.) if declared in .kicad_sch
+  titleBlock?: TitleBlockInfo | undefined;
+}
+
+export type PaperSize =
+  | 'A0' | 'A1' | 'A2' | 'A3' | 'A4' | 'A5'
+  | 'A' | 'B' | 'C' | 'D' | 'E'
+  | 'USLetter' | 'USLegal' | 'USLedger'
+  | 'Custom';
+
+export interface TitleBlockInfo {
+  title: string;
+  date: string;
+  rev: string;
+  company: string;
+  comments: string[];                 // comments 1..9, trimmed to last non-empty
 }
 
 export interface Component {
@@ -31,6 +47,10 @@ export interface Component {
   datasheet?: string | undefined;
   dnp: boolean;
   pins: Pin[];
+  /** All non-empty, non-hidden KiCad properties except Reference/Value/Footprint/Datasheet
+   *  which are surfaced as first-class fields. Keyed by property name; insertion order
+   *  matches the KiCad symbol declaration order. */
+  properties: Record<string, string>;
   positionMm?: Point | undefined;     // on PCB; undefined if schematic-only
   rotationDeg?: number | undefined;
   side?: 'top' | 'bottom' | undefined;

@@ -65,7 +65,10 @@
 
   function onClick(e: MouseEvent) {
     const g = (e.target as Element).closest('[data-refdes]');
-    if (!g) return;
+    if (!g) {
+      clearSelection();
+      return;
+    }
     const uuid = g.getAttribute('data-uuid');
     if (uuid) selectComponent({ uuid, source: 'sch' });
   }
@@ -204,7 +207,7 @@
     {@html svg}
   </div>
   {#if highlightedRefdes}
-    {@html `<style>.schematic-stage [data-refdes="${CSS.escape(highlightedRefdes)}"] rect { stroke: var(--kv-accent); stroke-width: 0.8; }</style>`}
+    {@html `<style>.schematic-stage [data-refdes="${CSS.escape(highlightedRefdes)}"] .sch-hitbox { stroke: var(--kv-accent); stroke-width: 0.35; stroke-dasharray: 0.6 0.3; }</style>`}
   {/if}
   {#if highlightedNet}
     {@html `<style>.schematic-stage [data-net="${CSS.escape(highlightedNet)}"] { fill: var(--kv-accent); font-weight: 700; }</style>`}
@@ -226,8 +229,9 @@
   .stage {
     position: relative; overflow: hidden;
     width: 100%; height: 100%;
-    background: var(--kv-render-bg);
+    background: var(--kv-sch-bg);
     cursor: grab; touch-action: none;
+    user-select: none; -webkit-user-select: none;
   }
   .stage.dragging { cursor: grabbing; }
   .svg {

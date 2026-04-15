@@ -15,6 +15,7 @@
   --kv-text-dim: #5b5f67;
   --kv-accent: #2563eb;
   --kv-render-bg: #111318;
+  --kv-sch-bg: #fbfbf8;
 }
 
 [data-theme='dark'] {
@@ -26,6 +27,7 @@
   --kv-text-dim: #8a93a6;
   --kv-accent: #6aa6ff;
   --kv-render-bg: #0b0d12;
+  --kv-sch-bg: #0b0d12;
 }
 
 html, body {

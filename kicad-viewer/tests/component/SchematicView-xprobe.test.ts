@@ -14,7 +14,7 @@ const p: Project = {
   }],
   components: [{
     uuid: 'u1', refdes: 'R1', value: '10k', footprint: 'R',
-    sheetUuid: 's0', dnp: false, pins: []
+    sheetUuid: 's0', dnp: false, pins: [], properties: {}
   }]
 };
 
