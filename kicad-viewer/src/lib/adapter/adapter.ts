@@ -30,6 +30,8 @@ import type {
   GraphicGeom,
   Zone as ModelZone,
   Via as ModelVia,
+  PaperSize,
+  TitleBlockInfo,
   Point,
   Rect
 } from '$lib/model/project';
@@ -97,6 +99,10 @@ function buildSheets(
   };
   const rootText = sources[root];
   if (rootText) rootSheet.rawSch = rootText;
+  const rootPaper = paperSize(rootSch);
+  if (rootPaper) rootSheet.paper = rootPaper;
+  const rootTb = titleBlockInfo(rootSch);
+  if (rootTb) rootSheet.titleBlock = rootTb;
   sheets.push(rootSheet);
 
   // One level of children: any other schematic in the bundle, placed under root.
@@ -113,9 +119,49 @@ function buildSheets(
     };
     const childText = sources[filename];
     if (childText) childSheet.rawSch = childText;
+    const childPaper = paperSize(sch);
+    if (childPaper) childSheet.paper = childPaper;
+    const childTb = titleBlockInfo(sch);
+    if (childTb) childSheet.titleBlock = childTb;
     sheets.push(childSheet);
   }
   return sheets;
+}
+
+function paperSize(sch: KicadSch | undefined): PaperSize | undefined {
+  const raw = (sch as unknown as { paper?: { size?: string } } | undefined)?.paper?.size;
+  if (!raw) return undefined;
+  switch (raw) {
+    case 'A0': case 'A1': case 'A2': case 'A3': case 'A4': case 'A5':
+    case 'A': case 'B': case 'C': case 'D': case 'E':
+      return raw;
+    case 'USLetter': return 'USLetter';
+    case 'USLegal': return 'USLegal';
+    case 'USLedger': return 'USLedger';
+    default: return 'Custom';
+  }
+}
+
+function titleBlockInfo(sch: KicadSch | undefined): TitleBlockInfo | undefined {
+  const tb = (sch as unknown as { title_block?: {
+    title?: string; date?: string; rev?: string; company?: string;
+    comment?: Record<string, string>;
+  } } | undefined)?.title_block;
+  if (!tb) return undefined;
+  const title = tb.title ?? '';
+  const date = tb.date ?? '';
+  const rev = tb.rev ?? '';
+  const company = tb.company ?? '';
+  const raw = tb.comment ?? {};
+  // KiCad stores comments keyed by number (1..9); keep positional order.
+  const comments: string[] = [];
+  for (let i = 1; i <= 9; i++) {
+    const v = raw[String(i)];
+    if (v != null) comments.push(v);
+  }
+  // Skip empty title blocks.
+  if (!title && !date && !rev && !company && comments.every((c) => !c)) return undefined;
+  return { title, date, rev, company, comments };
 }
 
 function paperBounds(sch: KicadSch | undefined): Rect {
@@ -165,7 +211,8 @@ function buildComponents(
         footprint: s.footprint || '',
         sheetUuid: sheet.uuid,
         dnp: s.dnp ?? false,
-        pins: extractPins(s, footprintByRefdes.get(refdes))
+        pins: extractPins(s, footprintByRefdes.get(refdes)),
+        properties: collectProperties(s)
       };
 
       const mpn = s.get_property_text?.('MPN');
@@ -180,6 +227,30 @@ function buildComponents(
     }
   }
   return comps;
+}
+
+// The Inspector handles these as first-class fields; skip them here so we don't
+// duplicate rows. "ki_*" fields are KiCad internal (keywords/filters/etc.).
+const RESERVED_PROPERTIES = new Set([
+  'Reference', 'Value', 'Footprint', 'Datasheet', 'MPN', 'Manufacturer'
+]);
+
+function collectProperties(sym: SchematicSymbol): Record<string, string> {
+  const out: Record<string, string> = {};
+  const props = sym.properties as unknown as Map<string, { name: string; text: string }>;
+  if (!props || typeof props.values !== 'function') return out;
+  // Include every property that has a value and isn't surfaced as a first-class
+  // field above. We intentionally don't filter on the `hide` flag: that flag
+  // controls visibility on the schematic canvas, not metadata availability
+  // (Description, LCSC Part, MPN_etc. are often hidden but still meaningful).
+  for (const p of props.values()) {
+    if (!p || RESERVED_PROPERTIES.has(p.name)) continue;
+    if (p.name.startsWith('ki_')) continue;
+    const text = (p.text ?? '').trim();
+    if (!text || text === '~') continue;
+    out[p.name] = text;
+  }
+  return out;
 }
 
 function extractPins(sym: SchematicSymbol, fp: FootprintGeom | undefined): Pin[] {
@@ -451,7 +522,12 @@ function drawingToGraphic(d: AnyBoardDrawing): Graphic | null {
 function buildZones(pcb: KicadPCB): ModelZone[] {
   const out: ModelZone[] = [];
   const collect = (zone: ParserZone): void => {
-    const netName = zone.net_name || pcb.get_netname_by_number(zone.net) || null;
+    // KiCad 10 stores the net as a name atom; KiCad 9 used a number index.
+    const netName =
+      zone.net_name ||
+      (typeof zone.net === 'string' ? zone.net : null) ||
+      (typeof zone.net === 'number' ? pcb.get_netname_by_number(zone.net) : null) ||
+      null;
     // Prefer filled polygons per layer when available — render matches plotted output.
     if (zone.filled_polygons && zone.filled_polygons.length > 0) {
       for (const fp of zone.filled_polygons) {
@@ -492,7 +568,9 @@ function buildVias(pcb: KicadPCB): ModelVia[] {
   const out: ModelVia[] = [];
   for (const v of pcb.vias ?? []) {
     const layers = v.layers ?? [];
-    const netName = pcb.get_netname_by_number(v.net) ?? null;
+    const netName =
+      (typeof v.net === 'string' ? v.net : null) ??
+      (typeof v.net === 'number' ? pcb.get_netname_by_number(v.net) ?? null : null);
     out.push({
       position: { x: v.at?.position?.x ?? 0, y: v.at?.position?.y ?? 0 },
       diameterMm: v.size ?? 0.6,

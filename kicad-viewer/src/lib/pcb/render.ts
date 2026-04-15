@@ -1,5 +1,5 @@
 import type { PcbScene } from './scene';
-import type { LayerInfo, GraphicGeom, Pad } from '$lib/model/project';
+import type { LayerInfo, GraphicGeom, Pad, Point, TrackSeg, FootprintGeom } from '$lib/model/project';
 
 export interface Viewport {
   x: number;
@@ -103,7 +103,6 @@ export function drawPcb(
 
   // Labels — only at sufficient zoom
   const REFDES_PX_PER_MM = 1.2;
-  const NET_PX_PER_MM = 2.5;
   const pxPerMm = viewport.scale;
 
   if (pxPerMm > REFDES_PX_PER_MM) {
@@ -123,28 +122,201 @@ export function drawPcb(
     ctx.restore();
   }
 
-  if (pxPerMm > NET_PX_PER_MM) {
-    ctx.save();
-    ctx.fillStyle = '#80e080';
-    const netHeightMm = Math.max(0.5, (0.9 / pxPerMm) * 10);
-    ctx.font = `${netHeightMm}px ui-sans-serif, system-ui, sans-serif`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    const seen = new Set<string>(); // label each net only once per run (dedupe at midpoint of first-seen track)
-    for (const [, buckets] of scene.byLayer) {
-      for (const t of buckets.tracks) {
-        if (!t.netName) continue;
-        if (seen.has(t.netName)) continue;
-        seen.add(t.netName);
-        const mx = (t.a.x + t.b.x) / 2;
-        const my = (t.a.y + t.b.y) / 2;
-        ctx.fillText(t.netName, mx, my - 0.2);
-      }
+  drawCopperLabels(ctx, scene, layers, visible, pxPerMm);
+
+  ctx.restore();
+}
+
+// ---------- copper labels (net names on tracks, pads, zones; pad numbers) ----------
+
+// Screen-relative sizing: labels target a constant on-screen pixel height, so
+// they're legible at any zoom level above the minimum.
+const TRACK_LABEL_PX = 10;
+const PAD_NUM_PX = 11;
+const PAD_NET_PX = 9;
+const ZONE_LABEL_PX = 14;
+const MIN_ZOOM_FOR_LABELS = 1.5; // pxPerMm — below this, labels would just clutter.
+
+function drawCopperLabels(
+  ctx: CanvasRenderingContext2D,
+  scene: PcbScene,
+  layers: LayerInfo[],
+  visible: Map<string, boolean>,
+  pxPerMm: number
+): void {
+  if (pxPerMm < MIN_ZOOM_FOR_LABELS) return;
+
+  const copperIds: string[] = [
+    'F.Cu',
+    ...layers.filter((l) => l.type === 'In.Cu').map((l) => l.id),
+    'B.Cu'
+  ];
+  const seenPads = new Set<Pad>();
+  const seenTrackLabels = new Set<string>();
+
+  for (const id of copperIds) {
+    const l = layers.find((x) => x.id === id);
+    if (!l || !visible.get(l.id)) continue;
+    const buckets = scene.byLayer.get(l.id);
+    if (!buckets) continue;
+
+    for (const z of buckets.zones) {
+      if (!z.netName || z.polygon.length < 3) continue;
+      drawZoneLabel(ctx, z.polygon, z.netName, pxPerMm);
     }
-    ctx.restore();
+
+    for (const { fp, pad } of buckets.pads) {
+      if (seenPads.has(pad)) continue;
+      seenPads.add(pad);
+      drawPadLabel(ctx, fp, pad, pxPerMm);
+    }
+
+    for (const t of buckets.tracks) {
+      if (!t.netName) continue;
+      const key = `${t.a.x},${t.a.y}|${t.b.x},${t.b.y}|${t.netName}`;
+      if (seenTrackLabels.has(key)) continue;
+      seenTrackLabels.add(key);
+      drawTrackLabel(ctx, t, pxPerMm);
+    }
+  }
+}
+
+function drawTrackLabel(ctx: CanvasRenderingContext2D, t: TrackSeg, pxPerMm: number): void {
+  if (!t.netName) return;
+  const dx = t.b.x - t.a.x;
+  const dy = t.b.y - t.a.y;
+  const lengthMm = Math.hypot(dx, dy);
+  if (lengthMm <= 0) return;
+
+  const heightMm = TRACK_LABEL_PX / pxPerMm;
+  const approxWidthMm = t.netName.length * heightMm * 0.55;
+  // Need the segment to be at least as long as the label, with a tiny margin.
+  if (approxWidthMm > lengthMm * 0.9) return;
+
+  const mx = (t.a.x + t.b.x) / 2;
+  const my = (t.a.y + t.b.y) / 2;
+  let angle = Math.atan2(dy, dx);
+  // Never-upside-down: fold into [-π/2, π/2] so text reads left-to-right.
+  if (angle > Math.PI / 2) angle -= Math.PI;
+  else if (angle < -Math.PI / 2) angle += Math.PI;
+
+  ctx.save();
+  ctx.translate(mx, my);
+  ctx.rotate(angle);
+  ctx.font = `${heightMm}px ui-sans-serif, system-ui, sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = 'rgba(255,255,255,0.95)';
+  ctx.strokeStyle = 'rgba(0,0,0,0.55)';
+  ctx.lineWidth = heightMm * 0.25;
+  // Outline first, then fill — makes labels legible over any copper color.
+  ctx.strokeText(t.netName, 0, 0);
+  ctx.fillText(t.netName, 0, 0);
+  ctx.restore();
+}
+
+function drawPadLabel(
+  ctx: CanvasRenderingContext2D,
+  fp: FootprintGeom,
+  pad: Pad,
+  pxPerMm: number
+): void {
+  const { sizeMm: sz } = pad;
+  if (sz.w <= 0 || sz.h <= 0) return;
+
+  const numH = PAD_NUM_PX / pxPerMm;
+  const netH = PAD_NET_PX / pxPerMm;
+
+  // If the pad is so small the number alone overflows it, skip altogether.
+  const minDim = Math.min(sz.w, sz.h);
+  if (numH > minDim * 1.3) return;
+
+  // Cumulative world rotation after the footprint transform chain.
+  const worldDeg = fp.side === 'bottom' ? -fp.rotationDeg : fp.rotationDeg;
+  const norm = ((worldDeg % 360) + 360) % 360;
+  const flip = norm > 90 && norm < 270;
+
+  ctx.save();
+  ctx.translate(fp.position.x, fp.position.y);
+  if (fp.side === 'bottom') ctx.scale(-1, 1);
+  ctx.rotate((fp.rotationDeg * Math.PI) / 180);
+  ctx.translate(pad.positionMm.x, pad.positionMm.y);
+  if (flip) ctx.rotate(Math.PI);
+
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = 'rgba(255,255,255,0.95)';
+  ctx.strokeStyle = 'rgba(0,0,0,0.5)';
+
+  if (pad.netName) {
+    // Number above, net below. Outline helps readability over copper fill.
+    ctx.font = `600 ${numH}px ui-sans-serif, system-ui, sans-serif`;
+    ctx.lineWidth = numH * 0.18;
+    ctx.strokeText(pad.number, 0, -numH * 0.6);
+    ctx.fillText(pad.number, 0, -numH * 0.6);
+
+    ctx.font = `${netH}px ui-sans-serif, system-ui, sans-serif`;
+    ctx.lineWidth = netH * 0.22;
+    ctx.strokeText(pad.netName, 0, netH * 0.7);
+    ctx.fillText(pad.netName, 0, netH * 0.7);
+  } else {
+    ctx.font = `600 ${numH}px ui-sans-serif, system-ui, sans-serif`;
+    ctx.lineWidth = numH * 0.18;
+    ctx.strokeText(pad.number, 0, 0);
+    ctx.fillText(pad.number, 0, 0);
   }
 
   ctx.restore();
+}
+
+function drawZoneLabel(
+  ctx: CanvasRenderingContext2D,
+  poly: Point[],
+  netName: string,
+  pxPerMm: number
+): void {
+  const c = polygonCentroid(poly);
+  if (!c) return;
+
+  const heightMm = ZONE_LABEL_PX / pxPerMm;
+
+  ctx.save();
+  ctx.font = `${heightMm}px ui-sans-serif, system-ui, sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = 'rgba(255,255,255,0.9)';
+  ctx.strokeStyle = 'rgba(0,0,0,0.55)';
+  ctx.lineWidth = heightMm * 0.22;
+  ctx.strokeText(netName, c.x, c.y);
+  ctx.fillText(netName, c.x, c.y);
+  ctx.restore();
+}
+
+function polygonCentroid(poly: Point[]): Point | null {
+  if (poly.length === 0) return null;
+  let cx = 0;
+  let cy = 0;
+  let area2 = 0;
+  for (let i = 0; i < poly.length; i++) {
+    const p0 = poly[i]!;
+    const p1 = poly[(i + 1) % poly.length]!;
+    const cross = p0.x * p1.y - p1.x * p0.y;
+    cx += (p0.x + p1.x) * cross;
+    cy += (p0.y + p1.y) * cross;
+    area2 += cross;
+  }
+  if (Math.abs(area2) < 1e-9) {
+    // Degenerate (collinear) — fall back to vertex average.
+    let ax = 0;
+    let ay = 0;
+    for (const p of poly) {
+      ax += p.x;
+      ay += p.y;
+    }
+    return { x: ax / poly.length, y: ay / poly.length };
+  }
+  const factor = 1 / (3 * area2);
+  return { x: cx * factor, y: cy * factor };
 }
 
 function drawGrid(ctx: CanvasRenderingContext2D, scene: PcbScene, viewport: Viewport): void {

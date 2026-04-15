@@ -453,22 +453,28 @@ export class Net {
     name: string;
 
     constructor(expr: Parseable) {
-        // (net 2 "+3V3")
-        Object.assign(
-            this,
-            parse_expr(
-                expr,
-                P.start("net"),
-                P.positional("number", T.number),
-                P.positional("name", T.string),
-            ),
-        );
+        // KiCad 9 and earlier: (net 2 "+3V3")
+        // KiCad 10:            (net "+3V3")
+        //
+        // The S-expression list comes in as a plain array. We inspect the second
+        // element; if it's a number we're on the old form, otherwise it's the
+        // name directly.
+        const list = expr as unknown as unknown[];
+        const a = list[1];
+        const b = list[2];
+        if (typeof a === "number") {
+            this.number = a;
+            this.name = typeof b === "string" ? b : "";
+        } else {
+            this.number = 0;
+            this.name = typeof a === "string" ? a : "";
+        }
     }
 }
 
 /** Items which store info for a single net */
 export interface HasNetInfo {
-    net: number | Net;
+    net: number | string | Net;
     get netname(): string | undefined;
 }
 
@@ -477,9 +483,7 @@ export function isNetInfo(obj: any): obj is HasNetInfo {
 }
 
 export function getNetNumber(item: HasNetInfo): number {
-    if (typeof item.net === "number") {
-        return item.net;
-    } else {
-        return item.net.number;
-    }
+    if (typeof item.net === "number") return item.net;
+    if (typeof item.net === "string") return 0; // KiCad 10 has no net indices
+    return item.net.number;
 }

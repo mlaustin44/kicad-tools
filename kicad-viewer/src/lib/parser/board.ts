@@ -176,12 +176,23 @@ export class Property {
     }
 }
 
+// KiCad 9: (net 1) — net index
+// KiCad 10: (net "VCC") — net name directly
+// Returns a number for the old form, a string for the new form.
+function parseNetRef(_obj: unknown, _name: string, e: unknown): number | string | undefined {
+    const list = e as unknown[];
+    const v = list[1];
+    if (typeof v === "number") return v;
+    if (typeof v === "string") return v;
+    return undefined;
+}
+
 export class LineSegment implements HasUniqueID, HasNetInfo {
     start: Vec2;
     end: Vec2;
     width: number;
     layer: string;
-    net: number;
+    net: number | string;
     locked = false;
     uuid?: string;
     tstamp?: string;
@@ -208,7 +219,7 @@ export class LineSegment implements HasUniqueID, HasNetInfo {
                 P.vec2("end"),
                 P.pair("width", T.number),
                 P.pair("layer", T.string),
-                P.pair("net", T.number),
+                P.expr("net", parseNetRef),
                 P.atom("locked"),
                 P.pair("uuid", T.string),
                 P.pair("tstamp", T.string),
@@ -221,7 +232,9 @@ export class LineSegment implements HasUniqueID, HasNetInfo {
     }
 
     get netname(): string | undefined {
-        return this.parent.get_netname_by_number(this.net);
+        if (typeof this.net === "string") return this.net;
+        if (typeof this.net === "number") return this.parent.get_netname_by_number(this.net);
+        return undefined;
     }
 }
 
@@ -231,7 +244,7 @@ export class ArcSegment implements HasUniqueID, HasNetInfo {
     end: Vec2;
     width: number;
     layer: string;
-    net: number;
+    net: number | string;
     locked = false;
     tstamp?: string;
     uuid?: string;
@@ -260,7 +273,7 @@ export class ArcSegment implements HasUniqueID, HasNetInfo {
                 P.vec2("end"),
                 P.pair("width", T.number),
                 P.pair("layer", T.string),
-                P.pair("net", T.number),
+                P.expr("net", parseNetRef),
                 P.atom("locked"),
                 P.pair("tstamp", T.string),
                 P.pair("uuid", T.string),
@@ -273,7 +286,9 @@ export class ArcSegment implements HasUniqueID, HasNetInfo {
     }
 
     get netname(): string | undefined {
-        return this.parent.get_netname_by_number(this.net);
+        if (typeof this.net === "string") return this.net;
+        if (typeof this.net === "number") return this.parent.get_netname_by_number(this.net);
+        return undefined;
     }
 }
 
@@ -287,7 +302,7 @@ export class Via implements HasUniqueID, HasNetInfo {
     keep_end_layers = false;
     locked = false;
     free = false;
-    net: number;
+    net: number | string;
     tstamp?: string;
     uuid?: string;
 
@@ -305,7 +320,7 @@ export class Via implements HasUniqueID, HasNetInfo {
                 P.pair("size", T.number),
                 P.pair("drill", T.number),
                 P.list("layers", T.string),
-                P.pair("net", T.number),
+                P.expr("net", parseNetRef),
                 P.atom("locked"),
                 P.atom("free"),
                 P.atom("remove_unused_layers"),
@@ -321,13 +336,15 @@ export class Via implements HasUniqueID, HasNetInfo {
     }
 
     get netname(): string | undefined {
-        return this.parent.get_netname_by_number(this.net);
+        if (typeof this.net === "string") return this.net;
+        if (typeof this.net === "number") return this.parent.get_netname_by_number(this.net);
+        return undefined;
     }
 }
 
 export class Zone implements HasUniqueID {
     locked = false;
-    net: number;
+    net: number | string;
     net_name: string;
     name: string;
     layer: string;
@@ -357,7 +374,7 @@ export class Zone implements HasUniqueID {
                 expr,
                 P.start("zone"),
                 P.atom("locked"),
-                P.pair("net", T.number),
+                P.expr("net", parseNetRef),
                 P.pair("net_name", T.string),
                 P.pair("net_name", T.string),
                 P.pair("name", T.string),

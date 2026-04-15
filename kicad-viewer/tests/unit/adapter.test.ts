@@ -50,6 +50,15 @@ describe('adapter.toProject (pic_programmer)', () => {
     }
   });
 
+  it('tracks and pads have net names populated (KiCad 10 format)', () => {
+    const tracksWithNet = project.pcb.tracks.filter((t) => t.netName);
+    const allPads = project.pcb.footprints.flatMap((f) => f.pads);
+    const padsWithNet = allPads.filter((p) => p.netName);
+    // pic_programmer fixture has hundreds of net-bearing tracks and pads.
+    expect(tracksWithNet.length).toBeGreaterThan(100);
+    expect(padsWithNet.length).toBeGreaterThan(100);
+  });
+
   it('has bounds with non-zero size', () => {
     expect(project.pcb.boundsMm.w).toBeGreaterThan(0);
     expect(project.pcb.boundsMm.h).toBeGreaterThan(0);
