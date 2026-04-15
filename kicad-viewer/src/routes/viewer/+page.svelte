@@ -12,6 +12,7 @@
   import SheetTree from '$lib/ui/SheetTree.svelte';
   import LayerPanel from '$lib/ui/LayerPanel.svelte';
   import SearchBar from '$lib/ui/SearchBar.svelte';
+  import SplitPane from '$lib/ui/SplitPane.svelte';
   import { project, componentsByUuid } from '$lib/stores/project';
   import { selection } from '$lib/stores/selection';
 
@@ -20,6 +21,8 @@
   let fitRequested = $state(0);
   let activeSheet = $state<string | null>(null);
   let cursorMm = $state<{ x: number; y: number } | null>(null);
+  let leftPane = $state<'sch' | 'pcb' | '3d'>('sch');
+  let rightPane = $state<'sch' | 'pcb' | '3d'>('pcb');
 
   $effect(() => {
     const p = $project;
@@ -82,6 +85,41 @@
       <PcbView onCursor={(c) => (cursorMm = c)} {fitRequested} />
     {:else if tab === '3d'}
       <ThreeDView />
+    {:else if tab === 'split'}
+      <SplitPane>
+        {#snippet left()}
+          <div class="pane-with-picker">
+            <select bind:value={leftPane}>
+              <option value="sch">Schematic</option>
+              <option value="pcb">PCB</option>
+              <option value="3d">3D</option>
+            </select>
+            {#if leftPane === 'sch'}
+              <SchematicView activeSheetUuid={activeSheet} onNavigateSheet={(u) => (activeSheet = u)} />
+            {:else if leftPane === 'pcb'}
+              <PcbView onCursor={(c) => (cursorMm = c)} />
+            {:else}
+              <ThreeDView />
+            {/if}
+          </div>
+        {/snippet}
+        {#snippet right()}
+          <div class="pane-with-picker">
+            <select bind:value={rightPane}>
+              <option value="sch">Schematic</option>
+              <option value="pcb">PCB</option>
+              <option value="3d">3D</option>
+            </select>
+            {#if rightPane === 'sch'}
+              <SchematicView activeSheetUuid={activeSheet} onNavigateSheet={(u) => (activeSheet = u)} />
+            {:else if rightPane === 'pcb'}
+              <PcbView onCursor={(c) => (cursorMm = c)} />
+            {:else}
+              <ThreeDView />
+            {/if}
+          </div>
+        {/snippet}
+      </SplitPane>
     {:else}
       <div class="stage">render area ({tab})</div>
     {/if}
@@ -98,4 +136,18 @@
   .empty { padding: 3rem; min-height: 100dvh; display: grid; place-items: center; background: var(--kv-bg); }
   .panel, .stage { padding: 1rem; color: var(--kv-text-dim); }
   .stage { color: var(--kv-text); }
+  .pane-with-picker {
+    height: 100%;
+    display: grid;
+    grid-template-rows: auto 1fr;
+  }
+  .pane-with-picker select {
+    padding: 4px 8px; border: none;
+    border-bottom: 1px solid var(--kv-border);
+    background: var(--kv-surface-2); color: var(--kv-text);
+    font-size: 0.75rem;
+  }
+  .pane-with-picker > :global(:nth-child(2)) {
+    min-height: 0;
+  }
 </style>
