@@ -1,3 +1,3 @@
-export const prerender = true;
-export const ssr = false;  // pure SPA
+export const prerender = false;
+export const ssr = false;
 export const trailingSlash = 'ignore';
