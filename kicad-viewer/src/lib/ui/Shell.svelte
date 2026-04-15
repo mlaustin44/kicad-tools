@@ -1,6 +1,7 @@
 <script lang="ts">
   import Tabs from './Tabs.svelte';
   import Footer from './Footer.svelte';
+  import SettingsModal from './SettingsModal.svelte';
   import { project } from '$lib/stores/project';
   import { theme, toggleTheme } from '$lib/stores/theme';
 
@@ -15,6 +16,8 @@
     cursorMm?: { x: number; y: number } | null;
   }
   let { tab, onTabChange, onClear, onHelp, children, sidebar, inspector, cursorMm }: Props = $props();
+
+  let settingsOpen = $state(false);
 </script>
 
 <div class="shell">
@@ -26,6 +29,7 @@
       {#if onClear}
         <button onclick={onClear} class="iconbtn" aria-label="Clear project">Clear</button>
       {/if}
+      <button onclick={() => (settingsOpen = true)} class="iconbtn" aria-label="Settings">Settings</button>
       {#if onHelp}
         <button onclick={onHelp} class="iconbtn" aria-label="Keyboard shortcuts">?</button>
       {/if}
@@ -41,6 +45,8 @@
 
   <Footer projectName={$project?.name ?? ''} cursorMm={cursorMm ?? null} />
 </div>
+
+<SettingsModal open={settingsOpen} onClose={() => (settingsOpen = false)} />
 
 <style>
   .shell { display: grid; grid-template-rows: auto 1fr auto; min-height: 100dvh; }
