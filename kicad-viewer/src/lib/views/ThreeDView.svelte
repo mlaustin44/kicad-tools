@@ -6,7 +6,7 @@
   import { selection, selectComponent, clearSelection } from '$lib/stores/selection';
   import { theme } from '$lib/stores/theme';
   import { loadGlb, indexByRefdes } from '$lib/three/loader';
-  import { loadStep } from '$lib/three/step-loader';
+  import { loadStep, evictStep } from '$lib/three/step-loader';
   import { computeComponentFrame } from '$lib/three/camera-framing';
   import { pushToast } from '$lib/stores/toasts';
 
@@ -25,6 +25,7 @@
   // Tracks whichever model is currently on screen (GLB or STEP). Keeping it
   // uniform lets cross-probe / click-hit / framing stay format-agnostic.
   let currentModelUrl: string | null = null;
+  let currentModelKind: 'glb' | 'step' | null = null;
   let currentModelGroup: THREE.Group | null = null;
   let loading = $state(false);
 
@@ -135,22 +136,23 @@
     if (scene) scene.background = new THREE.Color(readRenderBgColor());
   });
 
-  function disposeCurrentModel(): void {
-    if (!currentModelGroup || !scene) return;
-    scene.remove(currentModelGroup);
-    currentModelGroup.traverse((o) => {
+  function disposeGlbGroup(group: THREE.Group): void {
+    group.traverse((o) => {
       const mesh = o as THREE.Mesh;
       if (mesh.geometry) mesh.geometry.dispose();
       const mat = mesh.material;
       if (Array.isArray(mat)) mat.forEach((m) => m.dispose());
       else if (mat) mat.dispose();
     });
-    currentModelGroup = null;
-    refdesToMesh = new Map();
   }
 
   // Load / swap 3D model when the project's stepUrl or glbUrl changes. STEP
   // takes precedence when both are present (higher-fidelity CAD geometry).
+  //
+  // Disposal is asymmetric: GLB groups are fresh each load so we can dispose
+  // inline. STEP groups are cached by URL in step-loader.ts so tab switches
+  // don't re-parse — we only evict (and dispose) when the URL actually
+  // changes (user dropped a different file).
   $effect(() => {
     if (!scene) return;
     const stepUrl = $project?.stepUrl ?? null;
@@ -159,15 +161,25 @@
     const url = stepUrl ?? glbUrl ?? null;
 
     if (url === currentModelUrl) return;
+
+    // Swap out the previous model.
+    if (currentModelGroup) {
+      scene.remove(currentModelGroup);
+      if (currentModelKind === 'glb') {
+        disposeGlbGroup(currentModelGroup);
+      } else if (currentModelKind === 'step' && currentModelUrl) {
+        evictStep(currentModelUrl);
+      }
+      currentModelGroup = null;
+      refdesToMesh = new Map();
+    }
     currentModelUrl = url;
-    disposeCurrentModel();
+    currentModelKind = kind;
 
     if (!url || !kind) return;
 
     loading = true;
-    const loadPromise = kind === 'step'
-      ? fetch(url).then((r) => r.arrayBuffer()).then((b) => loadStep(new Uint8Array(b)))
-      : loadGlb(url);
+    const loadPromise = kind === 'step' ? loadStep(url) : loadGlb(url);
 
     loadPromise
       .then((group) => {
@@ -176,6 +188,12 @@
         scene.add(group);
         currentModelGroup = group;
         refdesToMesh = indexByRefdes(group);
+        if (refdesToMesh.size === 0) {
+          pushToast({
+            kind: 'info',
+            message: '3D model loaded, but no refdes labels were found — component picking disabled.'
+          });
+        }
         frameWhole();
       })
       .catch((e: unknown) => {
