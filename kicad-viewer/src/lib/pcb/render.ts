@@ -79,6 +79,49 @@ export function drawPcb(
     }
   }
 
+  // Labels — only at sufficient zoom
+  const REFDES_PX_PER_MM = 1.2;
+  const NET_PX_PER_MM = 2.5;
+  const pxPerMm = viewport.scale;
+
+  if (pxPerMm > REFDES_PX_PER_MM) {
+    ctx.save();
+    ctx.fillStyle = '#c8c8c8';
+    const refdesHeightMm = Math.max(0.8, (1.4 / pxPerMm) * 10);
+    ctx.font = `${refdesHeightMm}px ui-sans-serif, system-ui, sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    for (const fp of scene.footprints) {
+      // Mirror-aware rendering: for bottom-side, text would appear mirrored because
+      // the canvas is not flipped globally. We draw refdes in the footprint's natural
+      // coordinate frame (top-side convention). Users who care about accurate
+      // bottom-side rendering can still toggle the B.Fab layer and read there.
+      ctx.fillText(fp.refdes, fp.position.x, fp.position.y);
+    }
+    ctx.restore();
+  }
+
+  if (pxPerMm > NET_PX_PER_MM) {
+    ctx.save();
+    ctx.fillStyle = '#80e080';
+    const netHeightMm = Math.max(0.5, (0.9 / pxPerMm) * 10);
+    ctx.font = `${netHeightMm}px ui-sans-serif, system-ui, sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const seen = new Set<string>(); // label each net only once per run (dedupe at midpoint of first-seen track)
+    for (const [, buckets] of scene.byLayer) {
+      for (const t of buckets.tracks) {
+        if (!t.netName) continue;
+        if (seen.has(t.netName)) continue;
+        seen.add(t.netName);
+        const mx = (t.a.x + t.b.x) / 2;
+        const my = (t.a.y + t.b.y) / 2;
+        ctx.fillText(t.netName, mx, my - 0.2);
+      }
+    }
+    ctx.restore();
+  }
+
   ctx.restore();
 }
 
