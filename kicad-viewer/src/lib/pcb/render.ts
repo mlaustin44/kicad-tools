@@ -148,9 +148,10 @@ const PAD_NUM_MIN_WORLD_MM = 0.4;
 const ZONE_LABEL_FRACTION = 0.05; // fraction of zone bbox min dim
 const ZONE_LABEL_MIN_MM = 1.2;
 const ZONE_LABEL_MAX_MM = 6;
-// Minimum world-space separation between two labels for the *same* net.
-// Prevents a long bus being labeled at every segment midpoint.
-const SAME_NET_MIN_SPACING_MM = 30;
+// Minimum on-screen separation between two labels for the *same* net. Using
+// screen space (not world space) means dense labels at high zoom and wide
+// spacing at low zoom — proportional to how much board you can actually see.
+const SAME_NET_MIN_SPACING_PX = 120;
 
 // Axis-aligned bounding box for a rendered label, in world (mm) coordinates.
 // We use these to prevent labels from piling up on top of each other in dense
@@ -273,12 +274,14 @@ function drawTrackLabel(
   const mx = (t.a.x + t.b.x) / 2;
   const my = (t.a.y + t.b.y) / 2;
 
-  // Skip if there's already a same-net label within SAME_NET_MIN_SPACING_MM.
-  // One label per long trace is plenty; this trace just repeats it elsewhere.
+  // Skip if there's already a same-net label within SAME_NET_MIN_SPACING_PX
+  // on screen. One label per visible neighborhood is enough; any further
+  // copies would just be restating the same name within a glance's range.
+  const minSpacingMm = SAME_NET_MIN_SPACING_PX / pxPerMm;
   const existing = perNetCenters.get(t.netName);
   if (existing) {
     for (const c of existing) {
-      if (Math.hypot(c.x - mx, c.y - my) < SAME_NET_MIN_SPACING_MM) return;
+      if (Math.hypot(c.x - mx, c.y - my) < minSpacingMm) return;
     }
   }
 
@@ -341,13 +344,21 @@ function drawPadLabel(
   const norm = ((worldDeg % 360) + 360) % 360;
   const flip = norm > 90 && norm < 270;
 
-  // Track the number's bbox so tracks can't stomp it. Uses pad extents as a
-  // safe upper bound for how much screen real-estate the number occupies.
+  // Reserve just the rendered text footprint (not the whole pad), so a track
+  // label running past the pad can sit comfortably next to the pin number.
+  // If we also render a net name, extend the reserved height to cover it.
+  const numW = pad.number.length * numH * 0.55;
+  const totalTextH = showNet && pad.netName
+    ? numH + netH + numH * 0.3
+    : numH;
+  const totalTextW = showNet && pad.netName
+    ? Math.max(numW, pad.netName.length * netH * 0.55)
+    : numW;
   placed.push({
-    x0: worldCx - sz.w / 2,
-    y0: worldCy - sz.h / 2,
-    x1: worldCx + sz.w / 2,
-    y1: worldCy + sz.h / 2
+    x0: worldCx - totalTextW / 2,
+    y0: worldCy - totalTextH / 2,
+    x1: worldCx + totalTextW / 2,
+    y1: worldCy + totalTextH / 2
   });
 
   ctx.save();
