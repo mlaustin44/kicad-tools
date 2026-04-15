@@ -302,7 +302,7 @@ function toModelPad(pad: ParserPad, pcb: KicadPCB): ModelPad {
     y: pad.at?.position?.y ?? 0
   };
   const size = { w: pad.size?.x ?? 0, h: pad.size?.y ?? 0 };
-  return {
+  const out: ModelPad = {
     number: String(pad.number ?? ''),
     shape: String(pad.shape ?? 'rect'),
     layerIds,
@@ -310,6 +310,11 @@ function toModelPad(pad: ParserPad, pcb: KicadPCB): ModelPad {
     sizeMm: size,
     netName: pad.netname ?? null
   };
+  // Through-hole pads carry a drill.diameter; only set when truthy to respect
+  // exactOptionalPropertyTypes.
+  const drillMm = pad.drill?.diameter ?? 0;
+  if (drillMm > 0) out.drillMm = drillMm;
+  return out;
 }
 
 // KiCad pads can use wildcard layer patterns like "F.Cu", "*.Cu" meaning all copper,

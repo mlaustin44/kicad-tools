@@ -47,6 +47,10 @@ export function drawPcb(
   const edge = layers.find((l) => l.id === 'Edge.Cuts');
   if (edge && visible.get(edge.id)) drawLayer(ctx, scene, edge);
 
+  // Drill holes — punch through copper on through-hole pads and vias so they
+  // visually read as holes instead of solid copper dots.
+  drawDrillHoles(ctx, scene);
+
   // Selection overlay
   if (selectedFootprint) {
     const fp = scene.footprints.find((f) => f.uuid === selectedFootprint);
@@ -139,6 +143,39 @@ export function drawPcb(
   }
 
   ctx.restore();
+}
+
+function drawDrillHoles(ctx: CanvasRenderingContext2D, scene: PcbScene): void {
+  // Near-black so the hole reads as "punched through" on dark or light themes.
+  ctx.fillStyle = '#0a0d12';
+  // Through-hole pads: transform into each footprint's local frame, then punch.
+  for (const fp of scene.footprints) {
+    if (!fp.pads) continue;
+    for (const pad of fp.pads) {
+      if (!pad.drillMm || pad.drillMm <= 0) continue;
+      ctx.save();
+      ctx.translate(fp.position.x, fp.position.y);
+      if (fp.side === 'bottom') ctx.scale(-1, 1);
+      ctx.rotate((fp.rotationDeg * Math.PI) / 180);
+      ctx.beginPath();
+      ctx.arc(pad.positionMm.x, pad.positionMm.y, pad.drillMm / 2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+  }
+  // Vias: scene.ts places them on only one layer bucket, so iterate once across
+  // buckets to pick them up without double-drawing.
+  const seenVia = new Set<object>();
+  for (const [, buckets] of scene.byLayer) {
+    for (const v of buckets.vias) {
+      if (seenVia.has(v)) continue;
+      seenVia.add(v);
+      if (!v.drillMm || v.drillMm <= 0) continue;
+      ctx.beginPath();
+      ctx.arc(v.position.x, v.position.y, v.drillMm / 2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
 }
 
 function drawLayer(ctx: CanvasRenderingContext2D, scene: PcbScene, layer: LayerInfo): void {

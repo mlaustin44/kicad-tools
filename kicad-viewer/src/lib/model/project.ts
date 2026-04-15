@@ -74,7 +74,15 @@ export interface FootprintGeom {
   pads: Pad[];
   graphics: Graphic[];               // silk/fab lines, text
 }
-export interface Pad { number: string; shape: string; layerIds: string[]; positionMm: Point; sizeMm: Size; netName: string | null; }
+export interface Pad {
+  number: string;
+  shape: string;
+  layerIds: string[];
+  positionMm: Point;
+  sizeMm: Size;
+  drillMm?: number | undefined;      // set for through-hole pads
+  netName: string | null;
+}
 export interface Graphic { layerId: string; geom: GraphicGeom; }
 export type GraphicGeom =
   | { kind: 'line'; a: Point; b: Point; widthMm: number }
