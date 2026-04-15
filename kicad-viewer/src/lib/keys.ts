@@ -18,7 +18,10 @@ export function installKeyboardShortcuts(args: {
       case '4': args.setTab('split'); break;
       case '/': e.preventDefault(); args.onSearch(); break;
       case 'Escape': clearSelection(); break;
-      case 'f': args.onFit(); break;
+      case 'f':
+      case 'Home':
+        args.onFit();
+        break;
       case '[': args.onPrevSheet(); break;
       case ']': args.onNextSheet(); break;
       case 'l': args.onFocusLayers(); break;

@@ -8,6 +8,11 @@
   import { loadGlb, indexByRefdes } from '$lib/three/loader';
   import { pushToast } from '$lib/stores/toasts';
 
+  interface Props {
+    fitRequested?: number;
+  }
+  let { fitRequested = 0 }: Props = $props();
+
   let host: HTMLDivElement | undefined = $state();
   let canvas: HTMLCanvasElement | undefined = $state();
 
@@ -20,6 +25,20 @@
   let renderer: THREE.WebGLRenderer | null = null;
   let controls: OrbitControls | null = null;
   const raycaster = new THREE.Raycaster();
+
+  function frameToGlb(): void {
+    if (!currentGlbGroup || !camera || !controls) return;
+    const box = new THREE.Box3().setFromObject(currentGlbGroup);
+    if (box.isEmpty()) return;
+    const center = box.getCenter(new THREE.Vector3());
+    const size = box.getSize(new THREE.Vector3());
+    controls.target.copy(center);
+    const maxDim = Math.max(size.x, size.y, size.z);
+    const dist = maxDim * 2;
+    camera.position.copy(center).add(new THREE.Vector3(dist, dist, dist));
+    camera.lookAt(center);
+    controls.update();
+  }
 
   function readRenderBgColor(): number {
     if (typeof getComputedStyle === 'undefined') return 0x0b0d12;
@@ -116,18 +135,8 @@
       currentGlbGroup = group;
       refdesToMesh = indexByRefdes(group);
 
-      // Auto-frame: center camera on bounding box
-      const box = new THREE.Box3().setFromObject(group);
-      if (!box.isEmpty() && camera && controls) {
-        const center = box.getCenter(new THREE.Vector3());
-        const size = box.getSize(new THREE.Vector3());
-        controls.target.copy(center);
-        const maxDim = Math.max(size.x, size.y, size.z);
-        const dist = maxDim * 2;
-        camera.position.copy(center).add(new THREE.Vector3(dist, dist, dist));
-        camera.lookAt(center);
-        controls.update();
-      }
+      // Auto-frame on initial load.
+      frameToGlb();
     }).catch((e: unknown) => {
       const msg = e instanceof Error ? e.message : String(e);
       pushToast({ kind: 'error', message: `Couldn't load 3D model: ${msg}` });
@@ -181,6 +190,11 @@
     const f = t.files?.[0];
     if (f) void ingestGlbFile(f);
   }
+
+  // Fit on external request.
+  $effect(() => {
+    if (fitRequested > 0) frameToGlb();
+  });
 
   // External selection -> camera pan to mesh
   $effect(() => {

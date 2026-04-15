@@ -8,8 +8,9 @@
   interface Props {
     activeSheetUuid: string | null;
     onNavigateSheet?: (uuid: string) => void;
+    fitRequested?: number;
   }
-  let { activeSheetUuid, onNavigateSheet }: Props = $props();
+  let { activeSheetUuid, onNavigateSheet, fitRequested = 0 }: Props = $props();
 
   let activeSheet = $derived($sheetsByUuid.get(activeSheetUuid ?? '') ?? null);
 
@@ -86,6 +87,30 @@
   });
 
   let highlightedNet = $derived($selection?.kind === 'net' ? $selection.name : null);
+
+  function fit() {
+    if (!host || !activeSheet) return;
+    const rect = host.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return;
+    const b = activeSheet.boundsMm;
+    if (b.w <= 0 || b.h <= 0) return;
+    // Inner .svg is 800x600 — center the box in the host and scale to fit.
+    const s = Math.min(rect.width / 800, rect.height / 600) * 0.95;
+    viewport = {
+      x: (rect.width - 800 * s) / 2,
+      y: (rect.height - 600 * s) / 2,
+      scale: s
+    };
+  }
+
+  $effect(() => {
+    if (fitRequested > 0) fit();
+  });
+
+  // Auto-fit on sheet change
+  $effect(() => {
+    if (activeSheet) queueMicrotask(fit);
+  });
 
   $effect(() => {
     const s = $selection;

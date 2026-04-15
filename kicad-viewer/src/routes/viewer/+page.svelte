@@ -143,13 +143,13 @@
     {/snippet}
     {#snippet inspector()}<Inspector />{/snippet}
     {#if tab === 'sch'}
-      <SchematicView activeSheetUuid={activeSheet} onNavigateSheet={(u) => (activeSheet = u)} />
+      <SchematicView activeSheetUuid={activeSheet} onNavigateSheet={(u) => (activeSheet = u)} {fitRequested} />
     {:else if tab === 'pcb'}
       <PcbView onCursor={(c) => (cursorMm = c)} {fitRequested} />
     {:else if tab === '3d'}
       {#if ThreeDViewAsync}
         {@const View = ThreeDViewAsync}
-        <View />
+        <View {fitRequested} />
       {:else}
         <div class="stage-loading">Loading 3D view…</div>
       {/if}
@@ -163,12 +163,12 @@
               <option value="3d">3D</option>
             </select>
             {#if leftPane === 'sch'}
-              <SchematicView activeSheetUuid={activeSheet} onNavigateSheet={(u) => (activeSheet = u)} />
+              <SchematicView activeSheetUuid={activeSheet} onNavigateSheet={(u) => (activeSheet = u)} {fitRequested} />
             {:else if leftPane === 'pcb'}
-              <PcbView onCursor={(c) => (cursorMm = c)} />
+              <PcbView onCursor={(c) => (cursorMm = c)} {fitRequested} />
             {:else if ThreeDViewAsync}
               {@const View = ThreeDViewAsync}
-              <View />
+              <View {fitRequested} />
             {:else}
               <div class="stage-loading">Loading 3D view…</div>
             {/if}
@@ -182,12 +182,12 @@
               <option value="3d">3D</option>
             </select>
             {#if rightPane === 'sch'}
-              <SchematicView activeSheetUuid={activeSheet} onNavigateSheet={(u) => (activeSheet = u)} />
+              <SchematicView activeSheetUuid={activeSheet} onNavigateSheet={(u) => (activeSheet = u)} {fitRequested} />
             {:else if rightPane === 'pcb'}
-              <PcbView onCursor={(c) => (cursorMm = c)} />
+              <PcbView onCursor={(c) => (cursorMm = c)} {fitRequested} />
             {:else if ThreeDViewAsync}
               {@const View = ThreeDViewAsync}
-              <View />
+              <View {fitRequested} />
             {:else}
               <div class="stage-loading">Loading 3D view…</div>
             {/if}
