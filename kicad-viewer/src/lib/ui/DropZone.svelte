@@ -4,6 +4,7 @@
   import { project } from '$lib/stores/project';
   import { rootSchematic } from '$lib/loader/blob';
   import { pushToast } from '$lib/stores/toasts';
+  import { saveRecent } from '$lib/stores/recent';
 
   let dragging = $state(false);
 
@@ -23,6 +24,7 @@
       }
       if (blob.manifest) p.source = 'bundle';
       project.set(p);
+      await saveRecent(blob.files);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       pushToast({ kind: 'error', message: `Couldn't load project: ${msg}` });

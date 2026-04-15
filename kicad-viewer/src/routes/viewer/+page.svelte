@@ -15,6 +15,9 @@
   import SplitPane from '$lib/ui/SplitPane.svelte';
   import { project, componentsByUuid } from '$lib/stores/project';
   import { selection } from '$lib/stores/selection';
+  import { loadRecent, clearRecent } from '$lib/stores/recent';
+  import { classifyFiles, rootSchematic } from '$lib/loader/blob';
+  import { toProject } from '$lib/adapter/adapter';
 
   let tab = $state('sch');
   let searchOpen = $state(false);
@@ -41,8 +44,8 @@
     if (tab !== 'sch' && tab !== 'split') tab = 'sch';
   });
 
-  onMount(() =>
-    installKeyboardShortcuts({
+  onMount(() => {
+    const teardown = installKeyboardShortcuts({
       setTab: (t) => (tab = t),
       onSearch: () => (searchOpen = true),
       onFit: () => fitRequested++,
@@ -61,14 +64,49 @@
         }
       },
       onFocusLayers: () => { /* wired in Task 25 */ }
-    })
-  );
+    });
+
+    hydrateFromIdb();
+
+    return teardown;
+  });
+
+  async function hydrateFromIdb(): Promise<void> {
+    if (get(project)) return;
+    const files = await loadRecent();
+    if (!files) return;
+    if (get(project)) return;
+    const blob = classifyFiles(files);
+    const root = rootSchematic(blob);
+    if (!blob.kicadPcb || !root) return;
+    const schematics: Record<string, string> = {};
+    for (const s of blob.schematics) schematics[s] = blob.files[s] as string;
+    const p = toProject({
+      pro: blob.kicadPro ? (blob.files[blob.kicadPro] as string) : '{}',
+      pcb: blob.files[blob.kicadPcb] as string,
+      schematics,
+      rootSchematic: root
+    });
+    if (blob.glb) {
+      const u8 = blob.files[blob.glb] as Uint8Array;
+      p.glbUrl = URL.createObjectURL(new Blob([u8 as BlobPart], { type: 'model/gltf-binary' }));
+    }
+    if (blob.manifest) p.source = 'bundle';
+    project.set(p);
+  }
+
+  async function clearProject(): Promise<void> {
+    const p = get(project);
+    if (p?.glbUrl?.startsWith('blob:')) URL.revokeObjectURL(p.glbUrl);
+    await clearRecent();
+    project.set(null);
+  }
 </script>
 
 <svelte:head><title>Viewer — kicad-viewer</title></svelte:head>
 
 {#if $project}
-  <Shell {tab} onTabChange={(v) => (tab = v)} {cursorMm}>
+  <Shell {tab} onTabChange={(v) => (tab = v)} {cursorMm} onClear={clearProject}>
     {#snippet sidebar()}
       {#if tab === 'sch'}
         <SheetTree activeUuid={activeSheet} onSelect={(u) => (activeSheet = u)} />

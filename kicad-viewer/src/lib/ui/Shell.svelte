@@ -7,12 +7,13 @@
   interface Props {
     tab: string;
     onTabChange: (v: string) => void;
+    onClear?: () => void;
     children: import('svelte').Snippet;
     sidebar?: import('svelte').Snippet;
     inspector?: import('svelte').Snippet;
     cursorMm?: { x: number; y: number } | null;
   }
-  let { tab, onTabChange, children, sidebar, inspector, cursorMm }: Props = $props();
+  let { tab, onTabChange, onClear, children, sidebar, inspector, cursorMm }: Props = $props();
 </script>
 
 <div class="shell">
@@ -21,7 +22,10 @@
     <span class="project">{$project?.name ?? ''}</span>
     <Tabs value={tab} onChange={onTabChange} />
     <div class="actions">
-      <button onclick={toggleTheme}>{$theme === 'dark' ? '☾' : '☀'}</button>
+      {#if onClear}
+        <button onclick={onClear} class="iconbtn" aria-label="Clear project">Clear</button>
+      {/if}
+      <button onclick={toggleTheme} class="iconbtn" aria-label="Toggle theme">{$theme === 'dark' ? '☾' : '☀'}</button>
     </div>
   </header>
 
@@ -43,7 +47,9 @@
     background: var(--kv-surface);
   }
   .project { color: var(--kv-text-dim); font-size: 0.85rem; }
-  .actions button { background: transparent; border: 1px solid var(--kv-border); border-radius: 6px; padding: 4px 8px; color: var(--kv-text); }
+  .actions { display: flex; gap: 0.4rem; }
+  .actions .iconbtn { background: transparent; border: 1px solid var(--kv-border); border-radius: 6px; padding: 4px 8px; color: var(--kv-text); cursor: pointer; }
+  .actions .iconbtn:hover { background: var(--kv-surface-2); }
   .body {
     display: grid;
     grid-template-columns: 220px 1fr 280px;
