@@ -78,11 +78,14 @@
     };
   }
 
-  let drag = false;
-  let lx = 0;
-  let ly = 0;
+  let drag = $state(false);
+  let lx = 0, ly = 0;
   function onDown(e: PointerEvent) {
-    if (e.button !== 0) return;
+    if (e.button === 1) {
+      e.preventDefault();
+    } else if (e.button !== 0) {
+      return;
+    }
     drag = true;
     lx = e.clientX;
     ly = e.clientY;
@@ -175,11 +178,13 @@
 <div class="stage" bind:this={host}>
   <canvas
     bind:this={canvas}
+    class:dragging={drag}
     onwheel={onWheel}
     onpointerdown={onDown}
     onpointermove={onMove}
     onpointerup={onUp}
     onpointerleave={onLeave}
+    onauxclick={(e) => { if (e.button === 1) e.preventDefault(); }}
     onclick={onClick}
   ></canvas>
 </div>
@@ -199,4 +204,5 @@
     display: block;
     cursor: grab;
   }
+  canvas.dragging { cursor: grabbing; }
 </style>

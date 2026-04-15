@@ -31,12 +31,21 @@
     };
   }
 
-  let dragging = false, lastX = 0, lastY = 0;
+  let dragging = $state(false);
+  let lastX = 0, lastY = 0;
 
   function onDown(e: PointerEvent) {
+    if (e.button === 1) {
+      // Middle-click: pan regardless of target. Prevent default to stop auto-scroll cursor.
+      e.preventDefault();
+      dragging = true;
+      lastX = e.clientX; lastY = e.clientY;
+      host?.setPointerCapture(e.pointerId);
+      return;
+    }
     if (e.button !== 0) return;
     const t = e.target as Element;
-    if (t.closest('[data-refdes]')) return;  // clicks on symbols select, not pan
+    if (t.closest('[data-refdes]')) return;  // left-click on symbol = select, not pan
     dragging = true;
     lastX = e.clientX; lastY = e.clientY;
     host?.setPointerCapture(e.pointerId);
@@ -102,11 +111,13 @@
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 <div
   class="stage schematic-stage"
+  class:dragging
   bind:this={host}
   onwheel={onWheel}
   onpointerdown={onDown}
   onpointermove={onMove}
   onpointerup={onUp}
+  onauxclick={(e) => { if (e.button === 1) e.preventDefault(); }}
   onclick={onClick}
   ondblclick={onDblClick}
   role="img"
@@ -133,6 +144,7 @@
     background: var(--kv-render-bg);
     cursor: grab; touch-action: none;
   }
+  .stage.dragging { cursor: grabbing; }
   .svg {
     position: absolute; top: 0; left: 0;
     transform-origin: 0 0;
