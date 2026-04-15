@@ -1,7 +1,7 @@
 <script lang="ts">
   import { loadProject } from '$lib/loader/loader';
   import { toProject } from '$lib/adapter/adapter';
-  import { project } from '$lib/stores/project';
+  import { setProjectRevokingGlb } from '$lib/stores/project';
   import { rootSchematic } from '$lib/loader/blob';
   import { pushToast } from '$lib/stores/toasts';
   import { saveRecent } from '$lib/stores/recent';
@@ -23,7 +23,7 @@
         p.glbUrl = URL.createObjectURL(new Blob([u8 as BlobPart], { type: 'model/gltf-binary' }));
       }
       if (blob.manifest) p.source = 'bundle';
-      project.set(p);
+      setProjectRevokingGlb(p);
       await saveRecent(blob.files);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);

@@ -13,7 +13,7 @@
   import LayerPanel from '$lib/ui/LayerPanel.svelte';
   import SearchBar from '$lib/ui/SearchBar.svelte';
   import SplitPane from '$lib/ui/SplitPane.svelte';
-  import { project, componentsByUuid } from '$lib/stores/project';
+  import { project, componentsByUuid, setProjectRevokingGlb } from '$lib/stores/project';
   import { selection } from '$lib/stores/selection';
   import { loadRecent, clearRecent } from '$lib/stores/recent';
   import { classifyFiles, rootSchematic } from '$lib/loader/blob';
@@ -92,14 +92,12 @@
       p.glbUrl = URL.createObjectURL(new Blob([u8 as BlobPart], { type: 'model/gltf-binary' }));
     }
     if (blob.manifest) p.source = 'bundle';
-    project.set(p);
+    setProjectRevokingGlb(p);
   }
 
   async function clearProject(): Promise<void> {
-    const p = get(project);
-    if (p?.glbUrl?.startsWith('blob:')) URL.revokeObjectURL(p.glbUrl);
+    setProjectRevokingGlb(null);
     await clearRecent();
-    project.set(null);
   }
 </script>
 

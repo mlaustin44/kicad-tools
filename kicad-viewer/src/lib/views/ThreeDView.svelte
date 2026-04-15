@@ -2,7 +2,7 @@
   import { onMount, untrack } from 'svelte';
   import * as THREE from 'three';
   import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-  import { project } from '$lib/stores/project';
+  import { project, setProjectGlbUrl } from '$lib/stores/project';
   import { selection, selectComponent } from '$lib/stores/selection';
   import { loadGlb, indexByRefdes } from '$lib/three/loader';
   import { pushToast } from '$lib/stores/toasts';
@@ -153,7 +153,7 @@
       return;
     }
     const url = URL.createObjectURL(f);
-    project.update((p) => (p ? { ...p, glbUrl: url } : p));
+    setProjectGlbUrl(url);
   }
 
   function onGlbDrop(ev: DragEvent): void {
