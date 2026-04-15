@@ -11,6 +11,8 @@
   import ThreeDView from '$lib/views/ThreeDView.svelte';
   import SheetTree from '$lib/ui/SheetTree.svelte';
   import LayerPanel from '$lib/ui/LayerPanel.svelte';
+  import NetsPanel from '$lib/ui/NetsPanel.svelte';
+  import ComponentsPanel from '$lib/ui/ComponentsPanel.svelte';
   import SearchBar from '$lib/ui/SearchBar.svelte';
   import SplitPane from '$lib/ui/SplitPane.svelte';
   import { project, componentsByUuid, setProjectRevokingGlb } from '$lib/stores/project';
@@ -115,7 +117,12 @@
       {#if tab === 'sch'}
         <SheetTree activeUuid={activeSheet} onSelect={(u) => (activeSheet = u)} />
       {:else if tab === 'pcb'}
-        <LayerPanel />
+        <div class="pcb-sidebar">
+          <LayerPanel />
+          <NetsPanel />
+        </div>
+      {:else if tab === '3d'}
+        <ComponentsPanel />
       {:else}
         <div class="panel">({tab} sidebar)</div>
       {/if}
@@ -192,4 +199,7 @@
   .pane-with-picker > :global(:nth-child(2)) {
     min-height: 0;
   }
+  .pcb-sidebar { display: grid; grid-template-rows: auto 1fr; min-height: 0; height: 100%; }
+  .pcb-sidebar > :global(*:nth-child(1)) { border-bottom: 1px solid var(--kv-border); }
+  .pcb-sidebar > :global(*:nth-child(2)) { min-height: 0; }
 </style>
