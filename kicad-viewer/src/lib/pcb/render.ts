@@ -151,14 +151,14 @@ const PAD_NET_MIN_DIM_MM = 1.8;
 const ZONE_LABEL_FRACTION = 0.05; // fraction of zone bbox min dim
 const ZONE_LABEL_MIN_MM = 1.2;
 const ZONE_LABEL_MAX_MM = 6;
-// Vias are small, so labels sit on top of them with a dark halo. Height scales
-// with diameter (so 0.6mm vias read as tiny, 1.5mm vias read comfortably) and
-// is clamped to a readable range. Vias are only labeled past a higher zoom
-// floor than tracks — they need the zoom to actually be legible.
-const VIA_LABEL_FRACTION = 0.7;
-const VIA_LABEL_MIN_MM = 0.35;
-const VIA_LABEL_MAX_MM = 1.0;
-const VIA_LABEL_MIN_SCREEN_PX = 8;
+// Via labels: size the label to fit *inside* the via (like KiCad does) so it
+// reads as "belonging to" the via rather than drowning its neighborhood. Text
+// height is capped at a fraction of diameter so short nets don't look huge;
+// otherwise height is driven by the requirement that the label width <=
+// ~0.9 × diameter. Labels below VIA_LABEL_MIN_SCREEN_PX are skipped.
+const VIA_LABEL_HEIGHT_CAP_FRACTION = 0.45;
+const VIA_LABEL_WIDTH_FIT_FRACTION = 0.9;
+const VIA_LABEL_MIN_SCREEN_PX = 7;
 // Minimum on-screen separation between two labels for the *same* net. Using
 // screen space (not world space) means dense labels at high zoom and wide
 // spacing at low zoom — proportional to how much board you can actually see.
@@ -380,17 +380,15 @@ function drawViaLabel(
 ): void {
   if (!v.netName || v.diameterMm <= 0) return;
 
-  // Feature-relative: height scales with via diameter so small vias stay
-  // subtle while bigger power vias get readable labels.
-  const heightMm = Math.min(
-    VIA_LABEL_MAX_MM,
-    Math.max(v.diameterMm * VIA_LABEL_FRACTION, VIA_LABEL_MIN_MM)
-  );
-  // Don't even try at low zoom — via labels are useful only when you're
-  // zoomed in enough to actually read them without overlapping neighbors.
+  // Fit the label's width inside the via. Derive height from "width <= 0.9 × D"
+  // (characters ≈ 0.55 × h wide), then cap at 45% of the via diameter so short
+  // nets like "5V" don't balloon past the via.
+  const chars = Math.max(1, v.netName.length);
+  const widthFitHeightMm = (v.diameterMm * VIA_LABEL_WIDTH_FIT_FRACTION) / (chars * 0.55);
+  const heightMm = Math.min(widthFitHeightMm, v.diameterMm * VIA_LABEL_HEIGHT_CAP_FRACTION);
   if (heightMm * pxPerMm < VIA_LABEL_MIN_SCREEN_PX) return;
 
-  const approxWidthMm = v.netName.length * heightMm * 0.55;
+  const approxWidthMm = chars * heightMm * 0.55;
   const box = rotatedLabelBox(v.position.x, v.position.y, approxWidthMm, heightMm * 1.2, 0);
   if (placed.some((p) => bboxesOverlap(p, box))) return;
   placed.push(box);
@@ -401,7 +399,7 @@ function drawViaLabel(
   ctx.textBaseline = 'middle';
   ctx.fillStyle = 'rgba(255,255,255,0.95)';
   ctx.strokeStyle = 'rgba(0,0,0,0.7)';
-  ctx.lineWidth = heightMm * 0.3;
+  ctx.lineWidth = Math.max(0.02, heightMm * 0.15);
   ctx.strokeText(v.netName, v.position.x, v.position.y);
   ctx.fillText(v.netName, v.position.x, v.position.y);
   ctx.restore();
