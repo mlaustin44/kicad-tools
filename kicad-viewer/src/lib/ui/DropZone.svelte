@@ -19,8 +19,7 @@
       const p = toProject({ pro, pcb, schematics, rootSchematic: root });
       if (blob.glb) {
         const u8 = blob.files[blob.glb] as Uint8Array;
-        const ab = u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength) as ArrayBuffer;
-        p.glbUrl = URL.createObjectURL(new Blob([ab], { type: 'model/gltf-binary' }));
+        p.glbUrl = URL.createObjectURL(new Blob([u8 as BlobPart], { type: 'model/gltf-binary' }));
       }
       if (blob.manifest) p.source = 'bundle';
       project.set(p);
