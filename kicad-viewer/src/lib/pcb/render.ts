@@ -245,16 +245,16 @@ function drawCopperLabels(
     }
   }
 
-  // Vias that touch the active layer. Walk every bucket to find them because
-  // buildPcbScene only files each via under its layerFrom — so inner-active
-  // layers wouldn't otherwise see through-hole vias.
+  // Vias: label every via regardless of active layer. Vias are drilled holes
+  // that connect layers, so their net applies everywhere — matches KiCad's
+  // behavior. Walk every bucket since buildPcbScene files each via only under
+  // its layerFrom.
   const seenVias = new Set<Via>();
   for (const [, buckets] of scene.byLayer) {
     for (const v of buckets.vias) {
       if (seenVias.has(v)) continue;
       seenVias.add(v);
       if (!v.netName) continue;
-      if (!viaTouchesActive(v, activeLayer)) continue;
       drawViaLabel(ctx, v, pxPerMm, placed);
     }
   }
@@ -272,19 +272,6 @@ function drawCopperLabels(
       drawTrackLabel(ctx, t, pxPerMm, placed, perNetCenters);
     }
   }
-}
-
-function viaTouchesActive(v: Via, activeLayer: string): boolean {
-  if (v.layerFrom === activeLayer || v.layerTo === activeLayer) return true;
-  // Through-hole via (F.Cu <-> B.Cu) electrically passes every copper layer in
-  // between, so label it on inner copper when active.
-  if (
-    v.layerFrom === 'F.Cu' &&
-    v.layerTo === 'B.Cu' &&
-    activeLayer.endsWith('.Cu')
-  )
-    return true;
-  return false;
 }
 
 function drawTrackLabel(
