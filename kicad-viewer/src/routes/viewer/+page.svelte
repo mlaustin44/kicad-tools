@@ -26,6 +26,7 @@
   let searchOpen = $state(false);
   let helpOpen = $state(false);
   let fitRequested = $state(0);
+  let panPulse = $state({ dx: 0, dy: 0, seq: 0 });
   let presetRequested = $state<'top' | 'bottom' | 'iso' | null>(null);
   let activeSheet = $state<string | null>(null);
   let cursorMm = $state<{ x: number; y: number } | null>(null);
@@ -68,6 +69,7 @@
       setTab: (t) => (tab = t),
       onSearch: () => (searchOpen = true),
       onFit: () => fitRequested++,
+      onPan: (dx, dy) => { panPulse = { dx, dy, seq: panPulse.seq + 1 }; },
       onPrevSheet: () => {
         const p = get(project);
         if (!p || !activeSheet) return;
@@ -152,9 +154,9 @@
     {/snippet}
     {#snippet inspector()}<Inspector />{/snippet}
     {#if tab === 'sch'}
-      <SchematicView activeSheetUuid={activeSheet} onNavigateSheet={(u) => (activeSheet = u)} {fitRequested} />
+      <SchematicView activeSheetUuid={activeSheet} onNavigateSheet={(u) => (activeSheet = u)} {fitRequested} {panPulse} />
     {:else if tab === 'pcb'}
-      <PcbView onCursor={(c) => (cursorMm = c)} {fitRequested} />
+      <PcbView onCursor={(c) => (cursorMm = c)} {fitRequested} {panPulse} />
     {:else if tab === '3d'}
       {#if ThreeDViewAsync}
         {@const View = ThreeDViewAsync}
@@ -172,9 +174,9 @@
               <option value="3d">3D</option>
             </select>
             {#if leftPane === 'sch'}
-              <SchematicView activeSheetUuid={activeSheet} onNavigateSheet={(u) => (activeSheet = u)} {fitRequested} />
+              <SchematicView activeSheetUuid={activeSheet} onNavigateSheet={(u) => (activeSheet = u)} {fitRequested} {panPulse} />
             {:else if leftPane === 'pcb'}
-              <PcbView onCursor={(c) => (cursorMm = c)} {fitRequested} />
+              <PcbView onCursor={(c) => (cursorMm = c)} {fitRequested} {panPulse} />
             {:else if ThreeDViewAsync}
               {@const View = ThreeDViewAsync}
               <View {fitRequested} {presetRequested} />
@@ -191,9 +193,9 @@
               <option value="3d">3D</option>
             </select>
             {#if rightPane === 'sch'}
-              <SchematicView activeSheetUuid={activeSheet} onNavigateSheet={(u) => (activeSheet = u)} {fitRequested} />
+              <SchematicView activeSheetUuid={activeSheet} onNavigateSheet={(u) => (activeSheet = u)} {fitRequested} {panPulse} />
             {:else if rightPane === 'pcb'}
-              <PcbView onCursor={(c) => (cursorMm = c)} {fitRequested} />
+              <PcbView onCursor={(c) => (cursorMm = c)} {fitRequested} {panPulse} />
             {:else if ThreeDViewAsync}
               {@const View = ThreeDViewAsync}
               <View {fitRequested} {presetRequested} />

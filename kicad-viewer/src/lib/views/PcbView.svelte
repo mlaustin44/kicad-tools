@@ -10,8 +10,9 @@
   interface Props {
     onCursor?: (p: { x: number; y: number } | null) => void;
     fitRequested?: number;
+    panPulse?: { dx: number; dy: number; seq: number };
   }
-  let { onCursor, fitRequested = 0 }: Props = $props();
+  let { onCursor, fitRequested = 0, panPulse }: Props = $props();
 
   let host = $state<HTMLDivElement | undefined>(undefined);
   let canvas = $state<HTMLCanvasElement | undefined>(undefined);
@@ -147,6 +148,13 @@
   // fitRequested: tracked by parent via incrementing counter
   $effect(() => {
     if (fitRequested > 0) fit();
+  });
+
+  let lastPanSeq = 0;
+  $effect(() => {
+    if (!panPulse || panPulse.seq === lastPanSeq) return;
+    lastPanSeq = panPulse.seq;
+    viewport = { x: viewport.x + panPulse.dx, y: viewport.y + panPulse.dy, scale: viewport.scale };
   });
 
   // When a new project arrives, auto-fit once.
