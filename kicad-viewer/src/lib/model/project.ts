@@ -116,6 +116,8 @@ export type GraphicGeom =
       text: string;
       hAlign?: 'left' | 'center' | 'right';
       vAlign?: 'top' | 'center' | 'bottom';
+      bold?: boolean;
+      italic?: boolean;
     };
 export interface TrackSeg { layerId: string; a: Point; b: Point; widthMm: number; netName: string | null; }
 export interface Via { position: Point; diameterMm: number; drillMm: number; layerFrom: string; layerTo: string; netName: string | null; }

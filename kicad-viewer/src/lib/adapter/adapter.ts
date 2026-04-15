@@ -517,6 +517,7 @@ function drawingToGraphic(d: AnyBoardDrawing): Graphic | null {
     if (d.hide) return null;
     const heightMm = d.effects?.font?.size?.y ?? 1.0;
     const j = d.effects?.justify;
+    const font = d.effects?.font;
     const geom: GraphicGeom = {
       kind: 'text',
       position: { x: d.at?.position?.x ?? 0, y: d.at?.position?.y ?? 0 },
@@ -524,7 +525,9 @@ function drawingToGraphic(d: AnyBoardDrawing): Graphic | null {
       heightMm,
       text: d.shown_text ?? d.text ?? '',
       hAlign: j?.horizontal,
-      vAlign: j?.vertical
+      vAlign: j?.vertical,
+      bold: font?.bold,
+      italic: font?.italic
     };
     return { layerId, geom };
   }

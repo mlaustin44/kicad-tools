@@ -922,36 +922,57 @@ function drawGraphic(
     );
     ctx.stroke();
   } else if (s.kind === 'text') {
-    ctx.save();
-    ctx.translate(s.position.x, s.position.y);
-    ctx.rotate((s.rotationDeg * Math.PI) / 180);
-    // For bottom-side footprints, the outer transform mirrored the canvas X axis
-    // to flip silk/fab geometry. For text we want it to read top-view correctly,
-    // so counter-mirror here.
-    if (side === 'bottom') ctx.scale(-1, 1);
-    const heightPx = Math.max(0.8, s.heightMm);
-    ctx.fillStyle = ctx.strokeStyle;
-    ctx.font = `${heightPx}px ui-sans-serif, system-ui, sans-serif`;
-    const hAlign = s.hAlign ?? 'center';
-    const vAlign = s.vAlign ?? 'center';
-    ctx.textAlign = hAlign === 'center' ? 'center' : hAlign === 'left' ? 'left' : 'right';
-    const lines = s.text.split(/\\n|\n/);
-    const lineH = heightPx * 1.2;
-    // Vertical anchor relative to the multi-line block's top-left.
-    // We draw each line with textBaseline='alphabetic' based offsets below.
-    ctx.textBaseline = 'alphabetic';
-    const totalH = lineH * lines.length;
-    let blockTop: number;
-    if (vAlign === 'top') blockTop = 0;
-    else if (vAlign === 'bottom') blockTop = -totalH;
-    else blockTop = -totalH / 2;
-    // Baseline sits at ~0.8 of line height below the top of the line box.
-    for (let i = 0; i < lines.length; i++) {
-      const y = blockTop + i * lineH + lineH * 0.8;
-      ctx.fillText(lines[i]!, 0, y);
-    }
-    ctx.restore();
+    drawGraphicText(ctx, s, side);
   }
 
+  ctx.restore();
+}
+
+// KiCad's text "size" is the *cap height* (uppercase glyph height) in mm.
+// Canvas `font: Npx` sets the *em-size*, where cap height is about 72% of em
+// for most sans-serif system fonts. To render a KiCad-specified cap height of H
+// we need em-size = H / 0.72. This constant is the inverse: em-size multiplier.
+const KICAD_CAP_TO_EM = 1 / 0.72;
+
+function drawGraphicText(
+  ctx: CanvasRenderingContext2D,
+  s: Extract<GraphicGeom, { kind: 'text' }>,
+  side: 'top' | 'bottom'
+): void {
+  ctx.save();
+  ctx.translate(s.position.x, s.position.y);
+  ctx.rotate((s.rotationDeg * Math.PI) / 180);
+  // For bottom-side footprints, the outer transform mirrored the canvas X axis
+  // to flip silk/fab geometry. For text we want it to read top-view correctly,
+  // so counter-mirror here.
+  if (side === 'bottom') ctx.scale(-1, 1);
+
+  const capHeightMm = Math.max(0.2, s.heightMm);
+  const emMm = capHeightMm * KICAD_CAP_TO_EM;
+  const style = s.italic ? 'italic ' : '';
+  const weight = s.bold ? '700 ' : '400 ';
+  ctx.fillStyle = ctx.strokeStyle;
+  ctx.font = `${style}${weight}${emMm}px ui-sans-serif, system-ui, sans-serif`;
+
+  const hAlign = s.hAlign ?? 'center';
+  const vAlign = s.vAlign ?? 'center';
+  ctx.textAlign = hAlign === 'center' ? 'center' : hAlign === 'left' ? 'left' : 'right';
+  ctx.textBaseline = 'alphabetic';
+
+  // Multi-line layout: each line occupies `lineGapMm = capHeightMm * 1.2` of
+  // vertical space, matching KiCad's default line spacing for stroke fonts.
+  const lines = s.text.split(/\\n|\n/);
+  const lineGapMm = capHeightMm * 1.2;
+  const totalHeightMm = lineGapMm * lines.length;
+  let blockTopMm: number;
+  if (vAlign === 'top') blockTopMm = 0;
+  else if (vAlign === 'bottom') blockTopMm = -totalHeightMm;
+  else blockTopMm = -totalHeightMm / 2;
+  // Baseline of line i: top of block + i*lineGap + capHeight (baseline is at
+  // the bottom of the cap box for the alphabetic baseline).
+  for (let i = 0; i < lines.length; i++) {
+    const y = blockTopMm + i * lineGapMm + capHeightMm;
+    ctx.fillText(lines[i]!, 0, y);
+  }
   ctx.restore();
 }
