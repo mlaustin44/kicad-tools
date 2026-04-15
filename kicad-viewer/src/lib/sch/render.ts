@@ -167,7 +167,7 @@ function symbolParts(sch: KicadSch): string[] {
     // Always draw refdes + value labels near the symbol origin.
     const value = sym.value || '';
     inner.push(
-      `<g transform="rotate(${-rot})">` +
+      `<g transform="rotate(${fmt(rot)})">` +
         `<text x="0" y="-4" text-anchor="middle" font-size="1.4" fill="currentColor">` +
         escapeText(refdes) +
         `</text>` +
@@ -273,7 +273,7 @@ function fmt(n: number): string {
   // Keep numbers readable and deterministic. KiCad uses up to 4 decimal places in files.
   if (!isFinite(n)) return '0';
   const r = Math.round(n * 1000) / 1000;
-  return Number.isInteger(r) ? r.toString() : r.toString();
+  return r.toString();
 }
 
 function escapeAttr(s: string): string {
