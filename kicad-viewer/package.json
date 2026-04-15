@@ -29,6 +29,7 @@
   },
   "dependencies": {
     "fflate": "^0.8.2",
+    "flatbush": "^4.5.1",
     "open-props": "^1.7.23"
   }
 }
