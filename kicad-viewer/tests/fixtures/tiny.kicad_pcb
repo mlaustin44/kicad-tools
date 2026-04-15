@@ -1,0 +1,9 @@
+(kicad_pcb (version 20241229) (generator kicad_viewer_fixture)
+  (general (thickness 1.6))
+  (paper "A4")
+  (layers
+    (0 "F.Cu" signal) (31 "B.Cu" signal)
+    (36 "B.SilkS" user) (37 "F.SilkS" user)
+    (44 "Edge.Cuts" user)
+  )
+)
