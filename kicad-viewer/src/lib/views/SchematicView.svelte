@@ -2,9 +2,15 @@
   import { project, sheetsByUuid } from '$lib/stores/project';
   import { selectComponent, selection } from '$lib/stores/selection';
   import { buildSheetSvg } from '$lib/sch/render';
+  import Breadcrumb from '$lib/ui/Breadcrumb.svelte';
 
-  interface Props { activeSheetUuid: string | null; }
-  let { activeSheetUuid }: Props = $props();
+  interface Props {
+    activeSheetUuid: string | null;
+    onNavigateSheet?: (uuid: string) => void;
+  }
+  let { activeSheetUuid, onNavigateSheet }: Props = $props();
+
+  let activeSheet = $derived($sheetsByUuid.get(activeSheetUuid ?? '') ?? null);
 
   let viewport = $state({ x: 0, y: 0, scale: 1 });
   let host: HTMLDivElement | undefined = $state();
@@ -50,6 +56,13 @@
     if (uuid) selectComponent({ uuid, source: 'sch' });
   }
 
+  function onDblClick(e: MouseEvent) {
+    const sg = (e.target as Element).closest('[data-sheet-uuid]');
+    if (!sg) return;
+    const uuid = sg.getAttribute('data-sheet-uuid');
+    if (uuid) onNavigateSheet?.(uuid);
+  }
+
   let svg = $derived.by(() => {
     if (!$project || !activeSheetUuid) return '';
     const s = $sheetsByUuid.get(activeSheetUuid);
@@ -73,6 +86,7 @@
   onpointermove={onMove}
   onpointerup={onUp}
   onclick={onClick}
+  ondblclick={onDblClick}
   role="img"
   aria-label="Schematic view"
 >
@@ -81,6 +95,9 @@
   </div>
   {#if highlightedRefdes}
     {@html `<style>.schematic-stage [data-refdes="${CSS.escape(highlightedRefdes)}"] rect { stroke: var(--kv-accent); stroke-width: 0.8; }</style>`}
+  {/if}
+  {#if activeSheet}
+    <Breadcrumb sheet={activeSheet} />
   {/if}
 </div>
 

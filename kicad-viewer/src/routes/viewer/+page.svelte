@@ -1,25 +1,43 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { get } from 'svelte/store';
   import { installKeyboardShortcuts } from '$lib/keys';
   import Shell from '$lib/ui/Shell.svelte';
   import DropZone from '$lib/ui/DropZone.svelte';
   import Toast from '$lib/ui/Toast.svelte';
   import Inspector from '$lib/ui/Inspector.svelte';
   import SchematicView from '$lib/views/SchematicView.svelte';
+  import SheetTree from '$lib/ui/SheetTree.svelte';
   import { project } from '$lib/stores/project';
 
   let tab = $state('sch');
   let searchOpen = $state(false);
   let fitRequested = $state(0);
-  let activeSheet = $derived.by(() => $project?.sheets[0]?.uuid ?? null);
+  let activeSheet = $state<string | null>(null);
+
+  $effect(() => {
+    if (!activeSheet && $project) activeSheet = $project.sheets[0]?.uuid ?? null;
+  });
 
   onMount(() =>
     installKeyboardShortcuts({
       setTab: (t) => (tab = t),
       onSearch: () => (searchOpen = true),
       onFit: () => fitRequested++,
-      onPrevSheet: () => { /* wired in Task 20 */ },
-      onNextSheet: () => { /* wired in Task 20 */ },
+      onPrevSheet: () => {
+        const p = get(project);
+        if (!p || !activeSheet) return;
+        const idx = p.sheets.findIndex((s) => s.uuid === activeSheet);
+        if (idx > 0) activeSheet = p.sheets[idx - 1]!.uuid;
+      },
+      onNextSheet: () => {
+        const p = get(project);
+        if (!p || !activeSheet) return;
+        const idx = p.sheets.findIndex((s) => s.uuid === activeSheet);
+        if (idx >= 0 && idx + 1 < p.sheets.length) {
+          activeSheet = p.sheets[idx + 1]!.uuid;
+        }
+      },
       onFocusLayers: () => { /* wired in Task 25 */ }
     })
   );
@@ -29,10 +47,16 @@
 
 {#if $project}
   <Shell {tab} onTabChange={(v) => (tab = v)}>
-    {#snippet sidebar()}<div class="panel">sidebar ({tab})</div>{/snippet}
+    {#snippet sidebar()}
+      {#if tab === 'sch'}
+        <SheetTree activeUuid={activeSheet} onSelect={(u) => (activeSheet = u)} />
+      {:else}
+        <div class="panel">({tab} sidebar)</div>
+      {/if}
+    {/snippet}
     {#snippet inspector()}<Inspector />{/snippet}
     {#if tab === 'sch'}
-      <SchematicView activeSheetUuid={activeSheet} />
+      <SchematicView activeSheetUuid={activeSheet} onNavigateSheet={(u) => (activeSheet = u)} />
     {:else}
       <div class="stage">render area ({tab})</div>
     {/if}
