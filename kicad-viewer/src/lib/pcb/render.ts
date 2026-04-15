@@ -260,9 +260,11 @@ const PAD_NUM_MAX_WORLD_MM = 0.8;
 // warrant it — connectors, thermal pads, large SMD. Small IC pins would just
 // paint the same name over every pin, which is redundant with track labels.
 const PAD_NET_MIN_DIM_MM = 1.8;
-const ZONE_LABEL_FRACTION = 0.05; // fraction of zone bbox min dim
-const ZONE_LABEL_MIN_MM = 1.2;
-const ZONE_LABEL_MAX_MM = 6;
+// Zone labels: proportional to bbox so big pours get bigger labels, but tight
+// caps so they don't dwarf silk component references (which are ~0.8-1.2mm).
+const ZONE_LABEL_FRACTION = 0.025;
+const ZONE_LABEL_MIN_MM = 0.8;
+const ZONE_LABEL_MAX_MM = 2.0;
 // Via labels: size the label to fit *inside* the via (like KiCad does) so it
 // reads as "belonging to" the via rather than drowning its neighborhood. Text
 // height is capped at a fraction of diameter so short nets don't look huge;
