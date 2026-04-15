@@ -342,9 +342,11 @@
     </div>
   {/if}
   {#if $model3dStatus.kind === 'loading'}
-    <div class="loading">
-      <div class="spinner" aria-hidden="true"></div>
-      <div>Parsing 3D model…</div>
+    <div class="loading" role="status" aria-live="polite">
+      <div class="loading-title">Parsing 3D model…</div>
+      <div class="progress" aria-label="Parsing in progress">
+        <div class="progress-bar"></div>
+      </div>
       <div class="loading-sub">{elapsedSec.toFixed(1)}s elapsed · large STEP files can take 30-60s</div>
     </div>
   {/if}
@@ -356,7 +358,11 @@
       aria-label="Drop a 3D model file"
     >
       <p>No 3D asset loaded.</p>
-      <p class="dim">Drop a <code>.step</code>, <code>.stp</code>, or <code>.glb</code> here, or include one with your project bundle.</p>
+      <p class="dim">
+        Drop a <code>.glb</code> (recommended — includes silkscreen, copper, mask; loads instantly)
+        or a <code>.step</code>/<code>.stp</code> (solid bodies only; parses client-side in ~30–60s for large boards).
+      </p>
+      <p class="dim subtle">Generate a rich GLB with <code>kicad-cli pcb export glb --include-tracks --include-pads --include-zones --include-silkscreen --include-soldermask --fuse-shapes</code>.</p>
       <label class="btn">Pick 3D file
         <input type="file" accept=".glb,.gltf,.step,.stp" hidden onchange={onModelPick} />
       </label>
@@ -386,13 +392,27 @@
     font-size: 0.9rem;
     pointer-events: none;
   }
+  .loading-title { font-weight: 600; }
   .loading-sub { color: var(--kv-text-dim); font-size: 0.75rem; }
-  .spinner {
-    width: 36px; height: 36px; border-radius: 50%;
-    border: 3px solid var(--kv-border); border-top-color: var(--kv-accent, #6aa6ff);
-    animation: spin 0.9s linear infinite;
+  .progress {
+    width: 280px; height: 6px; border-radius: 3px;
+    background: var(--kv-surface); overflow: hidden;
+    border: 1px solid var(--kv-border);
   }
-  @keyframes spin { to { transform: rotate(360deg); } }
+  .progress-bar {
+    width: 35%; height: 100%;
+    background: linear-gradient(90deg,
+      transparent 0%,
+      var(--kv-accent, #6aa6ff) 25%,
+      var(--kv-accent, #6aa6ff) 75%,
+      transparent 100%);
+    animation: shimmer 1.3s ease-in-out infinite;
+  }
+  @keyframes shimmer {
+    from { transform: translateX(-100%); }
+    to   { transform: translateX(340%); }
+  }
+  .subtle { font-size: 0.7rem; opacity: 0.7; margin-top: 0.3rem; max-width: 420px; }
   .dim { color: var(--kv-text-dim); font-size: 0.85rem; }
   .btn {
     display: inline-block; margin-top: 0.75rem;
