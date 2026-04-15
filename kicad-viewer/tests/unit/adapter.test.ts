@@ -64,3 +64,24 @@ describe('adapter.toProject (pic_programmer)', () => {
     expect(project.pcb.boundsMm.h).toBeGreaterThan(0);
   });
 });
+
+describe('adapter.toProject bounds', () => {
+  const project2 = toProject({
+    pro: fix('pic_programmer.kicad_pro'),
+    pcb: fix('pic_programmer.kicad_pcb'),
+    schematics: {
+      'pic_programmer.kicad_sch': fix('pic_programmer.kicad_sch'),
+      'pic_sockets.kicad_sch': fix('pic_sockets.kicad_sch')
+    },
+    rootSchematic: 'pic_programmer.kicad_sch'
+  });
+
+  it('bounds match edge cut extents', () => {
+    const b = project2.pcb.boundsMm;
+    // pic_programmer edge cuts span roughly (73.66, 40.64) to (233.68, 139.7).
+    expect(b.x).toBeCloseTo(73.66, 1);
+    expect(b.y).toBeCloseTo(40.64, 1);
+    expect(b.w).toBeCloseTo(160.02, 1);
+    expect(b.h).toBeCloseTo(99.06, 1);
+  });
+});
