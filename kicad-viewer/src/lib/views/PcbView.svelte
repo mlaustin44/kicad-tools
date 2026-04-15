@@ -11,8 +11,9 @@
     onCursor?: (p: { x: number; y: number } | null) => void;
     fitRequested?: number;
     panPulse?: { dx: number; dy: number; seq: number };
+    zoomPulse?: { factor: number; seq: number };
   }
-  let { onCursor, fitRequested = 0, panPulse }: Props = $props();
+  let { onCursor, fitRequested = 0, panPulse, zoomPulse }: Props = $props();
 
   let host = $state<HTMLDivElement | undefined>(undefined);
   let canvas = $state<HTMLCanvasElement | undefined>(undefined);
@@ -155,6 +156,21 @@
     if (!panPulse || panPulse.seq === lastPanSeq) return;
     lastPanSeq = panPulse.seq;
     viewport = { x: viewport.x + panPulse.dx, y: viewport.y + panPulse.dy, scale: viewport.scale };
+  });
+
+  let lastZoomSeq = 0;
+  $effect(() => {
+    if (!zoomPulse || zoomPulse.seq === lastZoomSeq || !canvas) return;
+    lastZoomSeq = zoomPulse.seq;
+    const rect = canvas.getBoundingClientRect();
+    const mx = rect.width / 2;
+    const my = rect.height / 2;
+    const factor = zoomPulse.factor;
+    viewport = {
+      x: mx - (mx - viewport.x) * factor,
+      y: my - (my - viewport.y) * factor,
+      scale: viewport.scale * factor
+    };
   });
 
   // When a new project arrives, auto-fit once.

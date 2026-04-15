@@ -5,6 +5,7 @@ export function installKeyboardShortcuts(args: {
   onSearch: () => void;
   onFit: () => void;
   onPan: (dx: number, dy: number) => void;
+  onZoom: (factor: number) => void;
   onPrevSheet: () => void;
   onNextSheet: () => void;
   onFocusLayers: () => void;
@@ -29,6 +30,14 @@ export function installKeyboardShortcuts(args: {
       case 'ArrowRight': e.preventDefault(); args.onPan(-40, 0); break;
       case 'ArrowUp':    e.preventDefault(); args.onPan(0, 40); break;
       case 'ArrowDown':  e.preventDefault(); args.onPan(0, -40); break;
+      case '+':
+      case '=':
+        args.onZoom(1.25);
+        break;
+      case '-':
+      case '_':
+        args.onZoom(1 / 1.25);
+        break;
       case '[': args.onPrevSheet(); break;
       case ']': args.onNextSheet(); break;
       case 'l': args.onFocusLayers(); break;

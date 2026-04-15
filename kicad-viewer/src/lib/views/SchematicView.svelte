@@ -10,8 +10,9 @@
     onNavigateSheet?: (uuid: string) => void;
     fitRequested?: number;
     panPulse?: { dx: number; dy: number; seq: number };
+    zoomPulse?: { factor: number; seq: number };
   }
-  let { activeSheetUuid, onNavigateSheet, fitRequested = 0, panPulse }: Props = $props();
+  let { activeSheetUuid, onNavigateSheet, fitRequested = 0, panPulse, zoomPulse }: Props = $props();
 
   let activeSheet = $derived($sheetsByUuid.get(activeSheetUuid ?? '') ?? null);
 
@@ -113,6 +114,21 @@
     if (!panPulse || panPulse.seq === lastPanSeq) return;
     lastPanSeq = panPulse.seq;
     viewport = { ...viewport, x: viewport.x + panPulse.dx, y: viewport.y + panPulse.dy };
+  });
+
+  let lastZoomSeq = 0;
+  $effect(() => {
+    if (!zoomPulse || zoomPulse.seq === lastZoomSeq || !host) return;
+    lastZoomSeq = zoomPulse.seq;
+    const rect = host.getBoundingClientRect();
+    const mx = rect.width / 2;
+    const my = rect.height / 2;
+    const factor = zoomPulse.factor;
+    viewport = {
+      x: mx - (mx - viewport.x) * factor,
+      y: my - (my - viewport.y) * factor,
+      scale: viewport.scale * factor
+    };
   });
 
   // Auto-fit on sheet change
