@@ -94,6 +94,7 @@ function labelParts(sch: KicadSch): string[] {
     const transform = rot ? ` transform="rotate(${-rot} ${fmt(p.x)} ${fmt(p.y)})"` : '';
     out.push(
       `<text x="${fmt(p.x)}" y="${fmt(p.y)}" font-size="1.27" ` +
+        `data-net="${escapeAttr(text)}" ` +
         `fill="currentColor"${transform}>${escapeText(text)}</text>`
     );
   }

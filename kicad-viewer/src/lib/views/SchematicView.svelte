@@ -76,6 +76,8 @@
     return c?.refdes ?? null;
   });
 
+  let highlightedNet = $derived($selection?.kind === 'net' ? $selection.name : null);
+
   $effect(() => {
     const s = $selection;
     if (!s || s.source === 'sch' || s.kind !== 'component') return;
@@ -115,6 +117,9 @@
   </div>
   {#if highlightedRefdes}
     {@html `<style>.schematic-stage [data-refdes="${CSS.escape(highlightedRefdes)}"] rect { stroke: var(--kv-accent); stroke-width: 0.8; }</style>`}
+  {/if}
+  {#if highlightedNet}
+    {@html `<style>.schematic-stage [data-net="${CSS.escape(highlightedNet)}"] { fill: var(--kv-accent); font-weight: 700; }</style>`}
   {/if}
   {#if activeSheet}
     <Breadcrumb sheet={activeSheet} />
