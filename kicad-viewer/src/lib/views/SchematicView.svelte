@@ -32,7 +32,7 @@
     if (t.closest('[data-refdes]')) return;  // clicks on symbols select, not pan
     dragging = true;
     lastX = e.clientX; lastY = e.clientY;
-    (e.target as Element).setPointerCapture(e.pointerId);
+    host?.setPointerCapture(e.pointerId);
   }
 
   function onMove(e: PointerEvent) {
@@ -66,7 +66,7 @@
 <!-- svelte-ignore a11y_click_events_have_key_events -->
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 <div
-  class="stage"
+  class="stage schematic-stage"
   bind:this={host}
   onwheel={onWheel}
   onpointerdown={onDown}
@@ -80,7 +80,7 @@
     {@html svg}
   </div>
   {#if highlightedRefdes}
-    {@html `<style>[data-refdes="${highlightedRefdes.replace(/"/g, '&quot;')}"] rect { stroke: var(--kv-accent); stroke-width: 0.8; }</style>`}
+    {@html `<style>.schematic-stage [data-refdes="${CSS.escape(highlightedRefdes)}"] rect { stroke: var(--kv-accent); stroke-width: 0.8; }</style>`}
   {/if}
 </div>
 
