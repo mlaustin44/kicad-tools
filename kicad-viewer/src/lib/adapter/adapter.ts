@@ -315,25 +315,50 @@ function buildPcb(pcb: KicadPCB): PcbData {
 }
 
 function computeBounds(pcb: KicadPCB): Rect {
-  const bbox = pcb.edge_cuts_bbox;
-  if (bbox && bbox.w > 0 && bbox.h > 0) {
-    return { x: bbox.x, y: bbox.y, w: bbox.w, h: bbox.h };
-  }
-  // Fallback: union of footprint positions with a small margin.
-  if (pcb.footprints.length === 0) {
-    return { x: 0, y: 0, w: 0, h: 0 };
-  }
+  // Walk the board's own Edge.Cuts primitives and read the raw coordinates.
+  // We used to rely on pcb.edge_cuts_bbox, but its per-arc bbox depends on the
+  // parser's MathArc center-from-three-points which can misbehave; going to
+  // the raw `start`/`mid`/`end`/`center` points is CAD-accurate.
   let minX = Infinity;
   let minY = Infinity;
   let maxX = -Infinity;
   let maxY = -Infinity;
+  const include = (x: number, y: number) => {
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+    if (x < minX) minX = x;
+    if (y < minY) minY = y;
+    if (x > maxX) maxX = x;
+    if (y > maxY) maxY = y;
+  };
+  for (const d of pcb.drawings ?? []) {
+    const layer = (d as unknown as { layer?: string }).layer;
+    if (layer !== 'Edge.Cuts') continue;
+    const any = d as unknown as {
+      start?: { x: number; y: number };
+      mid?: { x: number; y: number };
+      end?: { x: number; y: number };
+      center?: { x: number; y: number };
+      pts?: Array<{ x: number; y: number }>;
+    };
+    if (any.start) include(any.start.x, any.start.y);
+    if (any.mid) include(any.mid.x, any.mid.y);
+    if (any.end) include(any.end.x, any.end.y);
+    if (any.center) include(any.center.x, any.center.y);
+    if (any.pts) for (const p of any.pts) include(p.x, p.y);
+  }
+
+  if (isFinite(minX) && isFinite(minY) && maxX > minX && maxY > minY) {
+    return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
+  }
+
+  // Fallback: union of footprint positions with a small margin.
+  if (pcb.footprints.length === 0) {
+    return { x: 0, y: 0, w: 0, h: 0 };
+  }
   for (const fp of pcb.footprints) {
     const p = fp.at?.position;
     if (!p) continue;
-    if (p.x < minX) minX = p.x;
-    if (p.y < minY) minY = p.y;
-    if (p.x > maxX) maxX = p.x;
-    if (p.y > maxY) maxY = p.y;
+    include(p.x, p.y);
   }
   if (!isFinite(minX)) return { x: 0, y: 0, w: 0, h: 0 };
   const margin = 5;
