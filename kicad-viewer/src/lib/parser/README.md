@@ -11,7 +11,8 @@ From `kicanvas/src/kicad/`:
 - `board.ts`, `schematic.ts` — typed models of parsed `.kicad_pcb` / `.kicad_sch`
 - `project-settings.ts` — `.kicad_pro` parser
 - `drawing-sheet.ts` — `.kicad_wks` / title-block parser
-- `theme.ts` — theme-type interfaces (used by `drawing-sheet.ts` etc.)
+- `theme.ts` — theme-type interfaces; not imported by the parser files
+  internally, but re-exported from the barrel `index.ts` for consumer use
 - `default_drawing_sheet.kicad_wks` — bundled default title block
 - `kicad_wks.d.ts` — module declaration for `*.kicad_wks` imports
 - `text/` — stroke-font engine (`font.ts`, `stroke-font.ts`, `glyph.ts`,

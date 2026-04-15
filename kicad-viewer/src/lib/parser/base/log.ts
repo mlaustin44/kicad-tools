@@ -33,7 +33,7 @@ export class Logger {
 
     public info(...args: any[]) {
         if (this.level >= LogLevel.INFO) {
-            this.#log(console.info.bind(window.console), ...args);
+            this.#log(console.info.bind(console), ...args);
         }
     }
 
