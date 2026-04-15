@@ -139,19 +139,24 @@ const MIN_READABLE_PX = 6;
 const TRACK_TARGET_PX = 10;
 const TRACK_MIN_WORLD_MM = 0.4;
 const TRACK_MAX_WORLD_MM = 1.5;
-// Pads are sized from their own dimensions (so the label always fits), but
-// with a world-size floor so tiny pads can still be labeled legibly at high
-// zoom instead of the text shrinking to a sub-millimeter speck.
-const PAD_NUM_FRACTION = 0.45;
-const PAD_NET_FRACTION = 0.32;
+// Pads are sized from their own dimensions so the label always fits, with a
+// world-size floor so tiny pads at high zoom still read legibly and a cap so
+// big thermal/connector pads don't get absurdly large labels.
+const PAD_NUM_FRACTION = 0.3;
+const PAD_NET_FRACTION = 0.22;
 const PAD_NUM_MIN_WORLD_MM = 0.4;
+const PAD_NUM_MAX_WORLD_MM = 1.2;
+// Net names get rendered as pad subtitles only when the pad is big enough to
+// warrant it — connectors, thermal pads, large SMD. Small IC pins would just
+// paint the same name over every pin, which is redundant with track labels.
+const PAD_NET_MIN_DIM_MM = 1.8;
 const ZONE_LABEL_FRACTION = 0.05; // fraction of zone bbox min dim
 const ZONE_LABEL_MIN_MM = 1.2;
 const ZONE_LABEL_MAX_MM = 6;
 // Minimum on-screen separation between two labels for the *same* net. Using
 // screen space (not world space) means dense labels at high zoom and wide
 // spacing at low zoom — proportional to how much board you can actually see.
-const SAME_NET_MIN_SPACING_PX = 120;
+const SAME_NET_MIN_SPACING_PX = 220;
 
 // Axis-aligned bounding box for a rendered label, in world (mm) coordinates.
 // We use these to prevent labels from piling up on top of each other in dense
@@ -321,14 +326,23 @@ function drawPadLabel(
   const { sizeMm: sz } = pad;
   if (sz.w <= 0 || sz.h <= 0) return;
 
-  // Feature-relative with a world-space floor. On a small pad, the floor
-  // pushes the label outside the pad boundary, but that's better than
-  // rendering an unreadable speck.
+  // Feature-relative sizing for the pad number, clamped to a readable range.
+  // The min floor keeps tiny pads legible at high zoom; the max cap stops
+  // giant pads (thermal slugs, big connector holes) from getting huge labels.
   const minDim = Math.min(sz.w, sz.h);
-  const numH = Math.max(minDim * PAD_NUM_FRACTION, PAD_NUM_MIN_WORLD_MM);
+  const numH = Math.min(
+    PAD_NUM_MAX_WORLD_MM,
+    Math.max(minDim * PAD_NUM_FRACTION, PAD_NUM_MIN_WORLD_MM)
+  );
   if (numH * pxPerMm < MIN_READABLE_PX) return;
-  const netH = Math.max(minDim * PAD_NET_FRACTION, PAD_NUM_MIN_WORLD_MM * 0.8);
+  const netH = Math.min(
+    PAD_NUM_MAX_WORLD_MM * 0.8,
+    Math.max(minDim * PAD_NET_FRACTION, PAD_NUM_MIN_WORLD_MM * 0.8)
+  );
+  // Only annotate pads big enough to carry both lines cleanly. Small IC pins
+  // skip the net name — tracks carry that information for them.
   const showNet = pad.netName !== null && pad.netName !== undefined
+    && minDim >= PAD_NET_MIN_DIM_MM
     && netH * pxPerMm >= MIN_READABLE_PX
     && pad.netName.length * netH * 0.55 <= Math.max(sz.w, sz.h) * 1.4;
 
