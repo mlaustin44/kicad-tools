@@ -49,7 +49,10 @@
 <SettingsModal open={settingsOpen} onClose={() => (settingsOpen = false)} />
 
 <style>
-  .shell { display: grid; grid-template-rows: auto 1fr auto; min-height: 100dvh; }
+  /* Definite height (not min-height) so the 1fr body row has a resolved size;
+     otherwise tall sidebar content grows the shell past the viewport and the
+     PCB canvas host stretches with it. */
+  .shell { display: grid; grid-template-rows: auto 1fr auto; height: 100dvh; overflow: hidden; }
   .top {
     display: grid; grid-template-columns: auto auto 1fr auto;
     align-items: center; gap: 1rem;
