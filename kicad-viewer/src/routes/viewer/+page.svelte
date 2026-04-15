@@ -8,6 +8,7 @@
   import Inspector from '$lib/ui/Inspector.svelte';
   import SchematicView from '$lib/views/SchematicView.svelte';
   import SheetTree from '$lib/ui/SheetTree.svelte';
+  import LayerPanel from '$lib/ui/LayerPanel.svelte';
   import SearchBar from '$lib/ui/SearchBar.svelte';
   import { project, componentsByUuid } from '$lib/stores/project';
   import { selection } from '$lib/stores/selection';
@@ -65,6 +66,8 @@
     {#snippet sidebar()}
       {#if tab === 'sch'}
         <SheetTree activeUuid={activeSheet} onSelect={(u) => (activeSheet = u)} />
+      {:else if tab === 'pcb'}
+        <LayerPanel />
       {:else}
         <div class="panel">({tab} sidebar)</div>
       {/if}
