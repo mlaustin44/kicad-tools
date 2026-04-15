@@ -65,7 +65,16 @@
     grid-template-columns: 220px 1fr 280px;
     min-height: 0;
   }
-  .side { background: var(--kv-surface); border-right: 1px solid var(--kv-border); overflow: auto; }
+  /* min-height/min-width: 0 stops grid children from expanding to their
+     intrinsic content size, which was stretching the PCB canvas host to
+     thousands of pixels when the nets/layers panels had long lists. */
+  .side {
+    background: var(--kv-surface); border-right: 1px solid var(--kv-border);
+    overflow: auto; min-height: 0; min-width: 0;
+  }
   .side.right { border-right: none; border-left: 1px solid var(--kv-border); }
-  .main { overflow: hidden; background: var(--kv-render-bg); }
+  .main {
+    overflow: hidden; background: var(--kv-render-bg);
+    min-height: 0; min-width: 0;
+  }
 </style>

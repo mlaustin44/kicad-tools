@@ -379,9 +379,7 @@ export function parse_expr(expr: string | List, ...defs: PropertyDefinition[]) {
             def = defs_map.get(n);
 
             if (!def) {
-                log.warn(
-                    `Bare element ${element} is undefined at position ${n} in expression ${expr}`,
-                );
+                // See comment below about silencing unknown elements.
                 continue;
             }
 

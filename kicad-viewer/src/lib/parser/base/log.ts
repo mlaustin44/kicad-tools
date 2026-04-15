@@ -5,15 +5,17 @@
 */
 
 export enum LogLevel {
-    ERROR,
-    INFO,
-    DEBUG,
+    SILENT = -1,
+    ERROR = 0,
+    WARN = 1,
+    INFO = 2,
+    DEBUG = 3,
 }
 
 export class Logger {
     constructor(
         public readonly name: string,
-        public level: LogLevel = LogLevel.INFO,
+        public level: LogLevel = LogLevel.SILENT,
     ) {}
 
     #log(method: CallableFunction, ...args: any[]) {
@@ -38,7 +40,7 @@ export class Logger {
     }
 
     public warn(...args: any[]) {
-        if (this.level >= LogLevel.ERROR) {
+        if (this.level >= LogLevel.WARN) {
             this.#log(console.warn, ...args);
         }
     }
