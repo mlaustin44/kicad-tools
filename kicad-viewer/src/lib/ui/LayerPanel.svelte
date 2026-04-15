@@ -8,6 +8,7 @@
     <div
       class="row"
       class:active={$activeLayer === l.id}
+      data-layer-id={l.id}
       role="button"
       tabindex="0"
       onclick={() => setActiveLayer(l.id)}

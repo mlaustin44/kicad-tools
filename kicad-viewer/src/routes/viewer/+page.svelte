@@ -54,18 +54,19 @@
     }
   });
 
-  // When selection comes from the search bar, jump to schematic and the containing
-  // sheet. PCB and 3D clicks stay in their own view — those views handle their own
-  // cross-probing highlight/pan, and yanking the tab away mid-interaction forces an
-  // expensive re-parse of the root schematic.
+  // Keep the schematic's active sheet in sync with the selected component, no
+  // matter where the selection came from (search / PCB / components panel).
+  // That way, when the user navigates to the Schematic tab they land on the
+  // right page with the part already centered. Only the search bar yanks the
+  // top-level tab across — PCB clicks leave you where you were.
   $effect(() => {
     const s = $selection;
     if (!s || s.kind !== 'component') return;
-    if (s.source !== 'search') return;
+    if (s.source === 'sch') return;
     const c = $componentsByUuid.get(s.uuid);
     if (!c) return;
     if (activeSheet !== c.sheetUuid) activeSheet = c.sheetUuid;
-    if (tab !== 'sch' && tab !== 'split') tab = 'sch';
+    if (s.source === 'search' && tab !== 'sch' && tab !== 'split') tab = 'sch';
   });
 
   onMount(() => {

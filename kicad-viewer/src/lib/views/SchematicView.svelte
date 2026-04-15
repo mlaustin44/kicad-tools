@@ -161,28 +161,58 @@
     };
   });
 
-  // Auto-fit on sheet change
+  // Framing logic: either fit the whole sheet, or cross-probe zoom to the
+  // selected component. Merged so the two can't race — prior bug was auto-fit
+  // landing after cross-probe and clobbering its zoom.
+  function crossProbeZoom(uuid: string): boolean {
+    if (!host) return false;
+    const el = host.querySelector(`[data-uuid="${uuid.replace(/"/g, '\\"')}"]`);
+    if (!el) return false;
+    const bbox = (el as SVGGraphicsElement).getBoundingClientRect();
+    const stageBox = host.getBoundingClientRect();
+    if (stageBox.width === 0 && stageBox.height === 0) return false;
+    const vp = untrack(() => viewport);
+    const naturalW = Math.max(bbox.width / vp.scale, 1);
+    const naturalH = Math.max(bbox.height / vp.scale, 1);
+    const elCenterX = (bbox.left + bbox.width / 2 - stageBox.left - vp.x) / vp.scale;
+    const elCenterY = (bbox.top + bbox.height / 2 - stageBox.top - vp.y) / vp.scale;
+    const shortDim = Math.min(stageBox.width, stageBox.height);
+    const elLargest = Math.max(naturalW, naturalH);
+    const rawScale = (shortDim * 0.25) / elLargest;
+    const targetScale = Math.max(0.3, Math.min(8, rawScale));
+    viewport = {
+      x: stageBox.width / 2 - elCenterX * targetScale,
+      y: stageBox.height / 2 - elCenterY * targetScale,
+      scale: targetScale
+    };
+    return true;
+  }
+
+  function frame() {
+    // If the current selection is a cross-probed component on this sheet,
+    // zoom to it. Otherwise fit the whole sheet.
+    const s = untrack(() => $selection);
+    if (s?.kind === 'component' && s.source !== 'sch') {
+      const c = untrack(() => $componentsByUuid.get(s.uuid));
+      if (c && c.sheetUuid === activeSheetUuid && crossProbeZoom(c.uuid)) return;
+    }
+    fit();
+  }
+
+  // Auto-frame on sheet change. requestAnimationFrame defers until after Svelte
+  // has committed the new SVG — querying bboxes in a microtask is too early
+  // when the sheet just swapped.
   $effect(() => {
-    if (activeSheet) queueMicrotask(fit);
+    if (activeSheet) requestAnimationFrame(frame);
   });
 
+  // Cross-probe when the selection changes while this view is mounted.
   $effect(() => {
     const s = $selection;
     if (!s || s.source === 'sch' || s.kind !== 'component') return;
     const c = $componentsByUuid.get(s.uuid);
     if (!c || c.sheetUuid !== activeSheetUuid) return;
-
-    const el = host?.querySelector(`[data-uuid="${c.uuid.replace(/"/g, '\\"')}"]`);
-    if (!el || !host) return;
-
-    const bbox = (el as SVGGraphicsElement).getBoundingClientRect();
-    const stageBox = host.getBoundingClientRect();
-    if (stageBox.width === 0 && stageBox.height === 0) return;
-    const dx = stageBox.width / 2 - (bbox.left + bbox.width / 2 - stageBox.left);
-    const dy = stageBox.height / 2 - (bbox.top + bbox.height / 2 - stageBox.top);
-    if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) return;
-    const vp = untrack(() => viewport);
-    viewport = { x: vp.x + dx, y: vp.y + dy, scale: vp.scale };
+    requestAnimationFrame(() => crossProbeZoom(c.uuid));
   });
 </script>
 

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { untrack } from 'svelte';
   import { project, componentsByRefdes } from '$lib/stores/project';
-  import { layerVisibility, layers, activeLayer } from '$lib/stores/layers';
+  import { layerVisibility, layers, activeLayer, setActiveLayer } from '$lib/stores/layers';
   import { settings } from '$lib/stores/settings';
   import {
     selection,
@@ -380,7 +380,9 @@
     }
   });
 
-  // External component selection (from Schematic, search, etc.) — recenter PCB on it.
+  // External component selection (from Schematic, search, etc.) — recenter PCB on
+  // it, zoom to a legible scale (component + context), and switch the active
+  // copper layer to match the footprint's side.
   $effect(() => {
     const s = $selection;
     if (!s || s.kind !== 'component' || s.source === 'pcb') return;
@@ -392,13 +394,36 @@
     if (!fp) return;
     const rect = canvas.getBoundingClientRect();
     if (rect.width <= 0 || rect.height <= 0) return;
-    const current = untrack(() => viewport);
+
+    // Layer swap — flip active copper to the side the part lives on.
+    const targetLayer = fp.side === 'bottom' ? 'B.Cu' : 'F.Cu';
+    const layerExists = untrack(() => $layers).some((l) => l.id === targetLayer);
+    if (layerExists && untrack(() => $activeLayer) !== targetLayer) {
+      setActiveLayer(targetLayer);
+    }
+
+    // Target scale: enough context around the part. Pad the bbox to at least
+    // a 15mm square so tiny 0402s don't zoom in to 200 px/mm. Then fit the
+    // padded bbox to ~50% of the shorter canvas dimension. Cap so we don't
+    // over-zoom big modules.
+    const MIN_CONTEXT_MM = 15;
+    const padW = Math.max(fp.bboxMm.w, MIN_CONTEXT_MM);
+    const padH = Math.max(fp.bboxMm.h, MIN_CONTEXT_MM);
+    const fitScale = Math.min(rect.width / padW, rect.height / padH) * 0.5;
+    // Never zoom further out than the whole-board fit; never past 40 px/mm.
+    const b = scene.boundsMm;
+    const boardFit = b.w > 0 && b.h > 0
+      ? Math.min(rect.width / b.w, rect.height / b.h) * 0.9
+      : fitScale;
+    const targetScale = Math.min(40, Math.max(boardFit, fitScale));
+
     const cx = fp.position.x;
     const cy = fp.position.y;
-    const nextX = rect.width / 2 - cx * current.scale;
-    const nextY = rect.height / 2 - cy * current.scale;
-    if (Math.abs(nextX - current.x) < 0.5 && Math.abs(nextY - current.y) < 0.5) return;
-    viewport = { x: nextX, y: nextY, scale: current.scale };
+    viewport = {
+      x: rect.width / 2 - cx * targetScale,
+      y: rect.height / 2 - cy * targetScale,
+      scale: targetScale
+    };
   });
 </script>
 
