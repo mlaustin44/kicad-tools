@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from .config import Config
 from .kicad_cli import run as kicad_run, KicadCliError
+from .naming import artifact_path
 from .utils import output_dir_for
 
 
@@ -19,7 +20,7 @@ def schematic_vars(cfg: Config) -> dict[str, str]:
 
 
 def export_schematic_pdf(cfg: Config, *, verbose: bool) -> tuple[Path, list[str]]:
-    out_pdf = output_dir_for(cfg) / "schematic.pdf"
+    out_pdf = artifact_path(cfg, output_dir_for(cfg), "SCHEMATICS", "pdf")
     args = ["sch", "export", "pdf", str(cfg.project.schematic_file),
             "-o", str(out_pdf)]
     for k, v in schematic_vars(cfg).items():

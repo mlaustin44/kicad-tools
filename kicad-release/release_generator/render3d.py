@@ -5,6 +5,9 @@ from .config import Config
 from .kicad_cli import run as kicad_run, KicadCliError
 from .utils import scratch_dir_for
 
+_ISO_ROTATE = {"top": "-30,0,-30", "bottom": "30,0,-30"}
+_ISO_ZOOM = "0.8"
+
 
 def render_pcb(cfg: Config, *, verbose: bool) -> tuple[list[Path], list[str]]:
     """Returns (list of PNG paths, warnings). Skips entirely if 3D render disabled."""
@@ -18,12 +21,16 @@ def render_pcb(cfg: Config, *, verbose: bool) -> tuple[list[Path], list[str]]:
     pngs: list[Path] = []
     for side in sides:
         png = out_dir / f"render-3d-{side}.png"
+        rotate = _ISO_ROTATE.get(side, "")
         args = ["pcb", "render", str(cfg.project.pcb_file),
                 "-o", str(png),
                 "--side", side,
                 "--quality", "high",
                 "--width", "1600", "--height", "1200",
-                "--background", "opaque"]
+                "--background", "transparent",
+                "--zoom", _ISO_ZOOM]
+        if rotate:
+            args += ["--rotate", rotate]
         kicad_run(args, verbose=verbose, timeout=900)
         if not png.exists():
             raise KicadCliError(f"render did not produce {png}")

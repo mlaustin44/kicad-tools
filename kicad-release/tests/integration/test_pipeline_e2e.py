@@ -13,24 +13,26 @@ ASM_TEMPLATE = REPO_ROOT / "templates" / "titleblock_assembly_a4.svg"
 def test_full_pipeline_against_real_project(kicad_project, tmp_path, capsys):
     cfg_path = write_test_config(
         tmp_path, kicad_project,
-        tables={"assembly_drawing": {"template": "tb_asm.svg"}},
+        tables={
+            "fab_drawing": {"template": "tb_fab.svg"},
+            "assembly_drawing": {"template": "tb_asm.svg"},
+        },
     )
     proj_dir = cfg_path.parent
-    # tb.svg is the default titleblock (used by fab_drawing); tb_asm.svg is
-    # used by assembly_drawing per the override above.
-    shutil.copy(FAB_TEMPLATE, proj_dir / "tb.svg")
+    shutil.copy(FAB_TEMPLATE, proj_dir / "tb_fab.svg")
     shutil.copy(ASM_TEMPLATE, proj_dir / "tb_asm.svg")
-    # include_3d_render = False is the helper default; that keeps the test snappy.
 
     rc = main(["--config", str(cfg_path)])
     assert rc == 0
 
     out = proj_dir / "releases" / "T1"
-    assert (out / "schematic.pdf").exists()
-    assert (out / "bom.csv").exists()
-    assert (out / "pick-and-place.csv").exists()
-    assert (out / "fab-drawing.pdf").exists()
-    assert (out / "assembly-drawing.pdf").exists()
+    prefix = "test-board_T1"
+    assert (out / f"{prefix}_SCHEMATICS.pdf").exists()
+    assert (out / f"{prefix}_BOM.csv").exists()
+    assert (out / f"{prefix}_PICK_AND_PLACE.csv").exists()
+    assert (out / f"{prefix}_FABRICATION_DRAWING.pdf").exists()
+    assert (out / f"{prefix}_ASSEMBLY_DRAWING.pdf").exists()
+    assert (out / f"{prefix}_DRILL.drl").exists()
     # Gerbers: job file is reliable; at least one .drl
     assert list((out / "gerbers").glob("*.gbrjob"))
     assert list((out / "gerbers").glob("*.drl"))

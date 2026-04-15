@@ -8,7 +8,7 @@ dist/
 releases/
 
 # Client-specific templates (kept local, not open-sourced)
-templates/private/
+kicad-release/templates/*/
 
 # Local overrides of example configs
-example/*.local.toml
+kicad-release/example/*.local.toml

@@ -8,20 +8,19 @@ from release_generator.config import load_config, ConfigError
 
 
 def write_minimal_config(tmp_path: Path, **overrides) -> Path:
-    """Write a minimal valid config plus dummy referenced files."""
     (tmp_path / "board.kicad_pcb").touch()
     (tmp_path / "board.kicad_sch").touch()
     (tmp_path / "tb.svg").write_text("<svg/>")
     body = textwrap.dedent(f"""
         [project]
         name = "Test"
+        file_name = "test-board"
         version = "{overrides.get('version', '1.0')}"
         date = "{overrides.get('date', '2026-04-14')}"
         pcb_file = "board.kicad_pcb"
         schematic_file = "board.kicad_sch"
 
         [titleblock]
-        template = "tb.svg"
         company = "ACME"
         drawn_by = "M Test"
         confidentiality = "PROPRIETARY"
@@ -32,11 +31,13 @@ def write_minimal_config(tmp_path: Path, **overrides) -> Path:
         description = "Initial"
 
         [fab_drawing]
+        template = "tb.svg"
         title = "Fab Drawing"
         page_size = "A4"
         notes = ["Note 1"]
 
         [assembly_drawing]
+        template = "tb.svg"
         title = "Assembly Drawing"
         page_size = "A4"
         notes = ["Note 1"]
@@ -62,11 +63,18 @@ def test_loads_minimal_valid_config(tmp_path):
     cfg_path = write_minimal_config(tmp_path)
     cfg = load_config(cfg_path)
     assert cfg.project.name == "Test"
+    assert cfg.project.file_name == "test-board"
     assert cfg.project.version == "1.0"
     assert cfg.project.pcb_file.name == "board.kicad_pcb"
     assert cfg.titleblock.company == "ACME"
     assert len(cfg.revisions) == 1
     assert cfg.gerbers.layers == "auto"
+    # Default enabled flags
+    assert cfg.fab_drawing.enabled
+    assert cfg.assembly_drawing.enabled
+    assert cfg.step.enabled
+    assert cfg.stl.enabled
+    assert cfg.kicad_project_dump.enabled
 
 
 def test_resolves_paths_relative_to_config(tmp_path):
@@ -101,20 +109,19 @@ def test_rejects_invalid_render_view(tmp_path):
         load_config(cfg_path)
 
 
-def test_rejects_zero_revisions(tmp_path):
+def test_revisions_optional(tmp_path):
     cfg_path = write_minimal_config(tmp_path)
     text = cfg_path.read_text()
     new_text = text.replace('[[revisions]]\nrev = "01"\nec = "N/A"\ndescription = "Initial"', '')
     assert new_text != text, "test fixture out of sync with template"
     cfg_path.write_text(new_text)
-    with pytest.raises(ConfigError, match="revisions"):
-        load_config(cfg_path)
+    cfg = load_config(cfg_path)
+    assert cfg.revisions == []
 
 
 def test_rejects_revision_missing_ec_field(tmp_path):
     cfg_path = write_minimal_config(tmp_path)
     text = cfg_path.read_text()
-    # Remove the ec line from the revision entry
     text = text.replace('ec = "N/A"\n', '')
     assert "ec = " not in text.split("[[revisions]]")[1].split("\n\n")[0], \
         "test fixture out of sync: failed to remove ec line"
@@ -145,3 +152,11 @@ def test_gerbers_layers_explicit_list(tmp_path):
     cfg_path.write_text(new_text)
     cfg = load_config(cfg_path)
     assert cfg.gerbers.layers == ["F.Cu", "B.Cu"]
+
+
+def test_rejects_missing_file_name(tmp_path):
+    cfg_path = write_minimal_config(tmp_path)
+    text = cfg_path.read_text().replace('file_name = "test-board"\n', "")
+    cfg_path.write_text(text)
+    with pytest.raises(ConfigError, match="file_name"):
+        load_config(cfg_path)

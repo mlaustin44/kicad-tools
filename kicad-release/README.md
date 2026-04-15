@@ -10,18 +10,32 @@ pick-and-place, BOM.
 
 ### Install
 
+Install as a [uv](https://docs.astral.sh/uv/) tool so `kicad-release` is on your
+PATH globally:
+
 ```bash
-git clone <repo> && cd kicad-tools
-python -m venv .venv
-.venv/bin/pip install -e .
+git clone <repo> && cd kicad-tools/kicad-release
+uv tool install .
 ```
 
+To upgrade after pulling changes: `uv tool install --reinstall .`
+
 Requires:
-- Python 3.11+
+- [uv](https://docs.astral.sh/uv/) (manages Python and dependencies)
 - KiCad 10+ (`kicad-cli` on PATH)
 - Optionally: Inkscape (used as a fallback if CairoSVG fails on a particular SVG)
 
 ### Usage
+
+Run from a project directory that contains a `release.toml` — the tool
+auto-detects it:
+
+```bash
+cd /path/to/your/kicad-project
+kicad-release
+```
+
+Or point explicitly at a config:
 
 ```bash
 # Full release
@@ -68,7 +82,8 @@ See `docs/superpowers/specs/2026-04-14-kicad-release-tool-design.md`.
 ### Tests
 
 ```bash
-.venv/bin/pytest tests/ -v
+uv sync --extra dev
+uv run --extra dev pytest tests/ -v
 ```
 
 Integration tests exercise `kicad-cli` against a real project. Set

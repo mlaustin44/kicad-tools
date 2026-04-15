@@ -8,23 +8,25 @@ def _default_tables(pcb_name: str, sch_name: str) -> dict[str, dict]:
     return {
         "project": {
             "name": "Test",
+            "file_name": "test-board",
             "version": "T1",
             "date": "auto",
             "pcb_file": pcb_name,
             "schematic_file": sch_name,
         },
         "titleblock": {
-            "template": "tb.svg",
             "company": "ACME",
             "drawn_by": "M Test",
             "confidentiality": "PROPRIETARY",
         },
         "fab_drawing": {
+            "template": "tb.svg",
             "title": "Fab Drawing",
             "page_size": "A4",
             "notes": [],
         },
         "assembly_drawing": {
+            "template": "tb.svg",
             "title": "Assembly Drawing",
             "page_size": "A4",
             "notes": [],
@@ -41,6 +43,9 @@ def _default_tables(pcb_name: str, sch_name: str) -> dict[str, dict]:
             "layers": "auto",
             "subtract_soldermask": False,
         },
+        "step": {"enabled": False},
+        "stl": {"enabled": False},
+        "kicad_project_dump": {"enabled": False},
     }
 
 

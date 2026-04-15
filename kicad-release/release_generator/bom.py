@@ -11,6 +11,7 @@ import re
 from pathlib import Path
 from .config import Config
 from .kicad_cli import run as kicad_run
+from .naming import artifact_path
 from .utils import output_dir_for
 
 
@@ -155,9 +156,13 @@ def generate_bom(cfg: Config, *, verbose: bool) -> tuple[Path, list[str]]:
             "-o", str(raw_csv_path),
             "--fields", fields_arg,
             "--labels", fields_arg]
+    # "Exclude from BOM" symbols are filtered by kicad-cli automatically;
+    # DNP filtering is opt-in per the config (default: exclude).
+    if cfg.bom.exclude_dnp:
+        args.append("--exclude-dnp")
     kicad_run(args, verbose=verbose)
     raw = raw_csv_path.read_text(encoding="utf-8")
     reshaped = reshape_bom(raw, group_by=cfg.bom.group_by, columns=cfg.bom.columns)
-    final_path = out_dir / "bom.csv"
+    final_path = artifact_path(cfg, out_dir, "BOM", "csv")
     final_path.write_text(reshaped, encoding="utf-8")
     return final_path, []

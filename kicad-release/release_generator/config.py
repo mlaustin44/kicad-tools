@@ -15,6 +15,7 @@ class ConfigError(ValueError):
 @dataclass
 class ProjectConfig:
     name: str
+    file_name: str
     version: str
     date: str
     pcb_file: Path
@@ -23,7 +24,6 @@ class ProjectConfig:
 
 @dataclass
 class TitleblockConfig:
-    template: Path
     company: str
     drawn_by: str
     confidentiality: str
@@ -39,19 +39,23 @@ class RevisionEntry:
 
 @dataclass
 class SchematicConfig:
+    enabled: bool = True
     extra_vars: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass
 class FabDrawingConfig:
+    enabled: bool
+    template: Path
     title: str
     page_size: str
     notes: list[str]
-    template: Path | None = None
 
 
 @dataclass
 class AssemblyDrawingConfig:
+    enabled: bool
+    template: Path
     title: str
     page_size: str
     notes: list[str]
@@ -59,19 +63,36 @@ class AssemblyDrawingConfig:
     layers_back: list[str]
     include_3d_render: bool = False
     render_view: str = "top"
-    template: Path | None = None
 
 
 @dataclass
 class BomConfig:
+    enabled: bool
     group_by: list[str]
     columns: list[str]
+    exclude_dnp: bool = True
 
 
 @dataclass
 class GerbersConfig:
+    enabled: bool
     layers: Union[str, list[str]]  # "auto" or explicit list
     subtract_soldermask: bool
+
+
+@dataclass
+class StepConfig:
+    enabled: bool = True
+
+
+@dataclass
+class StlConfig:
+    enabled: bool = True
+
+
+@dataclass
+class KicadDumpConfig:
+    enabled: bool = True
 
 
 @dataclass
@@ -84,13 +105,14 @@ class Config:
     assembly_drawing: AssemblyDrawingConfig
     bom: BomConfig
     gerbers: GerbersConfig
+    step: StepConfig
+    stl: StlConfig
+    kicad_project_dump: KicadDumpConfig
     config_dir: Path
 
     @property
     def release_dir_name(self) -> str:
-        """Sanitized version string safe for use as a directory name."""
         sanitized = re.sub(r"[^A-Za-z0-9._-]", "_", self.project.version)
-        # Collapse runs of dots to a single dot so ".." can't appear.
         sanitized = re.sub(r"\.{2,}", ".", sanitized)
         if not any(c.isalnum() for c in sanitized):
             raise ConfigError(
@@ -114,6 +136,10 @@ def _resolve_path(base: Path, rel: str, must_exist: bool, label: str) -> Path:
     return p
 
 
+def _enabled(section_raw: dict, default: bool = True) -> bool:
+    return bool(section_raw.get("enabled", default))
+
+
 def load_config(config_path: str | Path) -> Config:
     config_path = Path(config_path).resolve()
     if not config_path.exists():
@@ -127,11 +153,15 @@ def load_config(config_path: str | Path) -> Config:
     version = str(_require(proj_raw, "project", "version"))
     if not version.strip():
         raise ConfigError("[project] version must be non-empty")
+    file_name = str(_require(proj_raw, "project", "file_name"))
+    if not file_name.strip():
+        raise ConfigError("[project] file_name must be non-empty")
     date = str(_require(proj_raw, "project", "date"))
     if date == "auto":
         date = datetime.date.today().isoformat()
     project = ProjectConfig(
         name=str(_require(proj_raw, "project", "name")),
+        file_name=file_name,
         version=version,
         date=date,
         pcb_file=_resolve_path(base, _require(proj_raw, "project", "pcb_file"),
@@ -143,8 +173,6 @@ def load_config(config_path: str | Path) -> Config:
     # [titleblock]
     tb_raw = _require(raw, "root", "titleblock")
     titleblock = TitleblockConfig(
-        template=_resolve_path(base, _require(tb_raw, "titleblock", "template"),
-                               must_exist=True, label="[titleblock] template"),
         company=str(_require(tb_raw, "titleblock", "company")),
         drawn_by=str(_require(tb_raw, "titleblock", "drawn_by")),
         confidentiality=str(_require(tb_raw, "titleblock", "confidentiality")),
@@ -153,11 +181,9 @@ def load_config(config_path: str | Path) -> Config:
                    if "logo_file" in tb_raw else None),
     )
 
-    # [[revisions]]
+    # [[revisions]] — optional
     revs_raw = raw.get("revisions", [])
-    if not revs_raw:
-        raise ConfigError("at least one [[revisions]] entry is required")
-    revisions = []
+    revisions: list[RevisionEntry] = []
     for i, r in enumerate(revs_raw):
         section = f"revisions[{i}]"
         revisions.append(RevisionEntry(
@@ -166,21 +192,22 @@ def load_config(config_path: str | Path) -> Config:
             description=str(_require(r, section, "description")),
         ))
 
-    # [schematic] (optional)
+    # [schematic] (optional block; enabled defaults true)
     sch_raw = raw.get("schematic", {})
     schematic = SchematicConfig(
+        enabled=_enabled(sch_raw),
         extra_vars={str(k): str(v) for k, v in sch_raw.get("extra_vars", {}).items()},
     )
 
     # [fab_drawing]
     fab_raw = _require(raw, "root", "fab_drawing")
     fab = FabDrawingConfig(
+        enabled=_enabled(fab_raw),
+        template=_resolve_path(base, _require(fab_raw, "fab_drawing", "template"),
+                               must_exist=True, label="[fab_drawing] template"),
         title=str(_require(fab_raw, "fab_drawing", "title")),
         page_size=str(_require(fab_raw, "fab_drawing", "page_size")),
         notes=[str(n) for n in fab_raw.get("notes", [])],
-        template=(_resolve_path(base, fab_raw["template"], must_exist=True,
-                                label="[fab_drawing] template")
-                  if "template" in fab_raw else None),
     )
 
     # [assembly_drawing]
@@ -190,6 +217,9 @@ def load_config(config_path: str | Path) -> Config:
         raise ConfigError(f"[assembly_drawing] render_view must be one of "
                           f"top/bottom/both, got '{render_view}'")
     asm = AssemblyDrawingConfig(
+        enabled=_enabled(asm_raw),
+        template=_resolve_path(base, _require(asm_raw, "assembly_drawing", "template"),
+                               must_exist=True, label="[assembly_drawing] template"),
         title=str(_require(asm_raw, "assembly_drawing", "title")),
         page_size=str(_require(asm_raw, "assembly_drawing", "page_size")),
         notes=[str(n) for n in asm_raw.get("notes", [])],
@@ -197,16 +227,15 @@ def load_config(config_path: str | Path) -> Config:
         layers_back=[str(l) for l in asm_raw.get("layers_back", [])],
         include_3d_render=bool(asm_raw.get("include_3d_render", False)),
         render_view=render_view,
-        template=(_resolve_path(base, asm_raw["template"], must_exist=True,
-                                label="[assembly_drawing] template")
-                  if "template" in asm_raw else None),
     )
 
     # [bom]
     bom_raw = _require(raw, "root", "bom")
     bom = BomConfig(
+        enabled=_enabled(bom_raw),
         group_by=[str(g) for g in bom_raw.get("group_by", [])],
         columns=[str(c) for c in bom_raw.get("columns", [])],
+        exclude_dnp=bool(bom_raw.get("exclude_dnp", True)),
     )
 
     # [gerbers]
@@ -216,12 +245,18 @@ def load_config(config_path: str | Path) -> Config:
             (isinstance(gb_layers, list) and all(isinstance(x, str) for x in gb_layers))):
         raise ConfigError("[gerbers] layers must be \"auto\" or a list of strings")
     gerbers = GerbersConfig(
+        enabled=_enabled(gb_raw),
         layers=gb_layers,
         subtract_soldermask=bool(gb_raw.get("subtract_soldermask", False)),
     )
 
+    step = StepConfig(enabled=_enabled(raw.get("step", {})))
+    stl = StlConfig(enabled=_enabled(raw.get("stl", {})))
+    kicad_dump = KicadDumpConfig(enabled=_enabled(raw.get("kicad_project_dump", {})))
+
     return Config(
         project=project, titleblock=titleblock, revisions=revisions,
         schematic=schematic, fab_drawing=fab, assembly_drawing=asm,
-        bom=bom, gerbers=gerbers, config_dir=base,
+        bom=bom, gerbers=gerbers, step=step, stl=stl,
+        kicad_project_dump=kicad_dump, config_dir=base,
     )

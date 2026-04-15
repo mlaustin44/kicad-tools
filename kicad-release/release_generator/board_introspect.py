@@ -103,6 +103,29 @@ def _walk_drills(tree) -> list[float]:
     return drills
 
 
+def parse_references(pcb_path: Path) -> set[str]:
+    """Return the set of footprint reference designators (R1, C23, U3…).
+
+    Walks top-level `(footprint …)` nodes and pulls the `Reference` property.
+    """
+    tree = sexpdata.loads(pcb_path.read_text(encoding="utf-8"))
+    refs: set[str] = set()
+    for child in tree[1:] if isinstance(tree, list) else []:
+        if not isinstance(child, list) or not child:
+            continue
+        head = child[0]
+        if not isinstance(head, sexpdata.Symbol) or head.value() != "footprint":
+            continue
+        for prop in _find_all(child, "property"):
+            # (property "Reference" "R1" (at ...) ...)
+            if len(prop) >= 3 and str(prop[1]) == "Reference":
+                val = prop[2]
+                if isinstance(val, str) and val:
+                    refs.add(val)
+                break
+    return refs
+
+
 def _load_design_rules(pcb_path: Path) -> dict:
     """Return the `board.design_settings.rules` dict from the .kicad_pro
     JSON sibling of the .kicad_pcb, or {} if unavailable.

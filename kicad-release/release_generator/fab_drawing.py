@@ -17,6 +17,7 @@ from lxml import etree
 from .board_introspect import BoardInfo, parse_board
 from .config import Config
 from .kicad_cli import run as kicad_run
+from .naming import artifact_path
 from .svg_template import Region, SVG_NS, SvgTemplate
 from .svg_to_pdf import convert as svg_to_pdf
 from .utils import output_dir_for, scratch_dir_for
@@ -372,30 +373,51 @@ NOTES_TITLE_SIZE = 2.5      # Bold header above the numbered notes.
 NOTES_TITLE_GAP = 0.5       # mm — vertical gap between header baseline and note #1.
 
 
-def _build_notes_list(notes: list[str], *,
+def _build_notes_list(notes: list[str], region: Region, *,
                       title: str | None = None) -> etree._Element:
-    """Build a numbered list of notes as text elements.
+    """Render numbered notes inside ``region`` at true mm sizes, wrapping to width.
 
-    The numbered body is rendered in the "data" typography (FONT_STACK_MONO at
-    BODY_SIZE) so notes match the values in the board-characteristics table.
-    If ``title`` is given, it is rendered above the list as a bold header in
-    the label font (FONT_STACK) at NOTES_TITLE_SIZE, followed by a small gap.
+    Returns a <g> already translated to region.x/region.y; no further scaling
+    should be applied. Long notes wrap at the region width; hanging-indent
+    keeps wrapped lines aligned past the number prefix.
     """
-    g = etree.Element(f"{{{SVG_NS}}}g")
+    NUMBER_COL_W = 4.5      # mm — x offset where note text starts
+    SIDE_PAD = 1.0          # mm — inner padding (left/right) inside region
+    TOP_PAD = 1.0           # mm — inner top padding
+    CHAR_W = BODY_SIZE * 0.65  # DejaVu Sans Mono advance (conservative)
     row_h = BODY_SIZE * 1.7
+    text_x = NUMBER_COL_W
+
+    content_w = max(0.0, region.width - 2 * SIDE_PAD)
+    wrap_w = max(10.0, content_w - NUMBER_COL_W)
+    max_chars = max(10, int(wrap_w / CHAR_W))
+
+    import textwrap
+    wrapped = [
+        textwrap.wrap(note, width=max_chars,
+                      break_long_words=False, break_on_hyphens=False) or [""]
+        for note in notes
+    ]
+
+    g = etree.Element(f"{{{SVG_NS}}}g")
+    g.set("transform", f"translate({region.x + SIDE_PAD} {region.y + TOP_PAD})")
+
+    y = 0.0
     if title:
-        _text(g, 0, NOTES_TITLE_SIZE, title,
+        y = NOTES_TITLE_SIZE
+        _text(g, 0, y, title,
               size=NOTES_TITLE_SIZE, weight="bold", family=FONT_STACK,
               letter_spacing="0.04em")
-        offset = NOTES_TITLE_SIZE + NOTES_TITLE_GAP
-    else:
-        offset = 0.0
-    for i, note in enumerate(notes, start=1):
-        y = offset + (i + 0.5) * row_h
+        y += NOTES_TITLE_GAP
+
+    for i, lines in enumerate(wrapped, start=1):
+        y += row_h
         _text(g, 0, y, f"{i}.",
               size=BODY_SIZE, weight="bold", family=FONT_STACK_MONO)
-        _text(g, 4.5, y, note,
-              size=BODY_SIZE, weight="normal", family=FONT_STACK_MONO)
+        for j, line in enumerate(lines):
+            _text(g, text_x, y + j * row_h, line,
+                  size=BODY_SIZE, weight="normal", family=FONT_STACK_MONO)
+        y += (len(lines) - 1) * row_h
     return g
 
 
@@ -422,7 +444,7 @@ def compose_fab_drawing(cfg: Config, *, verbose: bool) -> tuple[Path, list[str]]
     """Assemble the fab drawing PDF. Returns (pdf_path, warnings)."""
     out = output_dir_for(cfg)
     scratch = scratch_dir_for(cfg)
-    template_path = cfg.fab_drawing.template or cfg.titleblock.template
+    template_path = cfg.fab_drawing.template
     warnings: list[str] = []
 
     # 1. Generate drill map SVG via kicad-cli.
@@ -485,23 +507,17 @@ def compose_fab_drawing(cfg: Config, *, verbose: bool) -> tuple[Path, list[str]]
                            _wrap_in_region(content, regions["stackup-table"],
                                            nw, nh))
 
-    # 8. Place fab notes.
+    # 8. Place fab notes. Rendered at true mm sizes inside the region.
     if "fab-notes" in regions and cfg.fab_drawing.notes:
         content = _build_notes_list(cfg.fab_drawing.notes,
+                                    regions["fab-notes"],
                                     title="FABRICATION NOTES")
-        notes_h = (NOTES_TITLE_SIZE + NOTES_TITLE_GAP
-                   + max(1, len(cfg.fab_drawing.notes)) * BODY_SIZE * 1.7
-                   + BODY_SIZE)
-        tpl.replace_region("fab-notes",
-                           _wrap_in_region(content, regions["fab-notes"],
-                                           90, notes_h,
-                                           padding=0.05,
-                                           vertical_anchor="top"))
+        tpl.replace_region("fab-notes", content)
 
     # 9. Write SVG, convert to PDF.
     final_svg = scratch / "fab-drawing.svg"
     final_svg.write_bytes(tpl.serialize())
-    final_pdf = out / "fab-drawing.pdf"
+    final_pdf = artifact_path(cfg, out, "FABRICATION_DRAWING", "pdf")
     svg_to_pdf(final_svg, final_pdf)
 
     return final_pdf, warnings

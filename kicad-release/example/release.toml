@@ -1,5 +1,6 @@
 [project]
 name = "Example PCB"
+file_name = "example-pcb"
 version = "1.0"
 # Specific ISO date is normal usage; "auto" is also supported (today's date).
 date = "2025-01-01"
@@ -7,17 +8,20 @@ pcb_file = "./example.kicad_pcb"
 schematic_file = "./example.kicad_sch"
 
 [titleblock]
-template = "../templates/titleblock_fab_a4.svg"
 company = "Acme Corp"
 drawn_by = "Your Name"
 confidentiality = "PROPRIETARY AND CONFIDENTIAL"
 
+# [[revisions]] is optional. Each entry populates {{REV_1}}, {{EC_1}},
+# {{DESC_1}}, {{REV_2}}… placeholders in the title-block template.
 [[revisions]]
 rev = "A"
 ec = "N/A"
 description = "Initial release"
 
 [fab_drawing]
+enabled = true
+template = "../templates/titleblock_fab_a4.svg"
 title = "Fab Drawing"
 page_size = "A4"
 notes = [
@@ -33,24 +37,41 @@ notes = [
 ]
 
 [assembly_drawing]
+enabled = true
+template = "../templates/titleblock_assembly_a4.svg"
 title = "Assembly Drawing"
 page_size = "A4"
-template = "../templates/titleblock_assembly_a4.svg"
 notes = [
     "This board is to be assembled and soldered in accordance with IPC-A-610 (current revision), Class 2 specification. CERTIFICATION REQUIRED",
     "Warning: This board contains electrostatic sensitive devices. All personnel handling this board must be electrically grounded.",
     "PCB Assembly shall be lead free, in compliance with the RoHS Directive (current revision). CERTIFICATION REQUIRED",
     "Pin 1 of integrated circuits (ICs) is indicated with a dot or circle in the silkscreen. Cathodes are designated with a dot, bar, or K designation on the silkscreen and/or assembly drawing",
 ]
-layers_front = ["F.Fab", "F.Courtyard", "Edge.Cuts"]
-layers_back = ["B.Fab", "B.Courtyard", "Edge.Cuts"]
+layers_front = ["F.Silkscreen", "F.Fab", "F.Courtyard", "Edge.Cuts"]
+layers_back = ["B.Silkscreen", "B.Fab", "B.Courtyard", "Edge.Cuts"]
 include_3d_render = true
 render_view = "top"
 
+[schematic]
+enabled = true
+
 [bom]
+enabled = true
 group_by = ["value", "footprint"]
 columns = ["reference", "value", "footprint", "quantity", "mpn", "manufacturer"]
+# "Exclude from BOM" symbols are always dropped (kicad-cli default).
+exclude_dnp = true
 
 [gerbers]
+enabled = true
 layers = "auto"
 subtract_soldermask = false
+
+[step]
+enabled = true
+
+[stl]
+enabled = true
+
+[kicad_project_dump]
+enabled = true

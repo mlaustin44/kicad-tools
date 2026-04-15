@@ -22,6 +22,8 @@ def test_gerbers_produces_expected_files(kicad_project, tmp_path):
     drl_files = list(gerber_dir.glob("*.drl"))
     assert drl_files, f"no .drl files in {gerber_dir}"
     # Pick-and-place CSV exists and has a header row
-    pos = out / "pick-and-place.csv"
+    pos = out / "test-board_T1_PICK_AND_PLACE.csv"
     assert pos.exists()
     assert pos.read_text().count("\n") >= 1
+    # DRILL convenience copy at release root
+    assert (out / "test-board_T1_DRILL.drl").exists()
