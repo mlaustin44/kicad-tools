@@ -7,6 +7,29 @@
     return /^(https?:)?\/\//i.test(s) || s.startsWith('/');
   }
 
+  function vendorUrlFor(key: string, val: string): string | null {
+    const k = key.toLowerCase().replace(/[_\s-]/g, '');
+    const pn = val.trim();
+    if (!pn) return null;
+    const q = encodeURIComponent(pn);
+    if (k.includes('digikey') || k === 'dk' || k === 'dkpn') {
+      return `https://www.digikey.com/en/products/result?keywords=${q}`;
+    }
+    if (k.includes('mouser')) {
+      return `https://www.mouser.com/c/?q=${q}`;
+    }
+    if (k.includes('lcsc')) {
+      return `https://www.lcsc.com/search?q=${q}`;
+    }
+    if (k.includes('arrow')) {
+      return `https://www.arrow.com/en/products/search?q=${q}`;
+    }
+    if (k.includes('newark') || k.includes('farnell') || k.includes('element14')) {
+      return `https://www.newark.com/search?st=${q}`;
+    }
+    return null;
+  }
+
   function highlightNet(name: string) {
     selectNet({ name, source: 'pcb' });
   }
@@ -43,7 +66,10 @@
       {#each Object.entries(c.properties) as [key, val]}
         <dt>{key}</dt>
         <dd>
-          {#if isUrl(val)}<a href={val} target="_blank" rel="noopener">{val}</a>
+          {#if isUrl(val)}
+            <a href={val} target="_blank" rel="noopener">{val}</a>
+          {:else if vendorUrlFor(key, val)}
+            <a class="mono" href={vendorUrlFor(key, val)!} target="_blank" rel="noopener">{val} ↗</a>
           {:else}{val}{/if}
         </dd>
       {/each}
@@ -177,7 +203,7 @@
 {/if}
 
 <style>
-  :global(.side.right) { padding: 0.6rem 0.7rem; font-size: 0.75rem; }
+  :global(.side.right .side-body) { padding: 0.6rem 0.7rem; font-size: 0.75rem; }
   .empty { color: var(--kv-text-dim); font-size: 0.8rem; }
 
   .hdr {
