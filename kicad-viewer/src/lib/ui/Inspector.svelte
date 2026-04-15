@@ -1,9 +1,14 @@
 <script lang="ts">
-  import { selection } from '$lib/stores/selection';
-  import { componentsByUuid, sheetsByUuid, netsByName } from '$lib/stores/project';
+  import { selection, selectNet } from '$lib/stores/selection';
+  import { componentsByUuid, sheetsByUuid, netsByName, project } from '$lib/stores/project';
+  import { trackLengthMm, polygonAreaMm2 } from '$lib/pcb/hit-test';
 
   function isUrl(s: string): boolean {
     return /^(https?:)?\/\//i.test(s) || s.startsWith('/');
+  }
+
+  function highlightNet(name: string) {
+    selectNet({ name, source: 'pcb' });
   }
 </script>
 
@@ -102,6 +107,73 @@
       <dt>Components</dt><dd>{s.componentUuids.length}</dd>
     </dl>
   {/if}
+{:else if $selection.kind === 'track'}
+  {@const t = $project?.pcb.tracks[$selection.idx]}
+  {#if t}
+    <header class="hdr">
+      <div class="titles">
+        <h3>Track</h3>
+        {#if t.netName}<span class="value">{t.netName}</span>{/if}
+      </div>
+    </header>
+    <dl>
+      <dt>Net</dt><dd class="mono">{t.netName ?? '—'}</dd>
+      <dt>Layer</dt><dd class="mono">{t.layerId}</dd>
+      <dt>Width</dt><dd class="mono">{t.widthMm.toFixed(3)} mm</dd>
+      <dt>Length</dt><dd class="mono">{trackLengthMm(t).toFixed(3)} mm</dd>
+      <dt>From</dt><dd class="mono">{t.a.x.toFixed(2)}, {t.a.y.toFixed(2)}</dd>
+      <dt>To</dt><dd class="mono">{t.b.x.toFixed(2)}, {t.b.y.toFixed(2)}</dd>
+    </dl>
+    {#if t.netName}
+      <button class="action" onclick={() => highlightNet(t.netName!)}>Highlight net</button>
+    {/if}
+  {:else}
+    <p class="empty">Track not found</p>
+  {/if}
+{:else if $selection.kind === 'zone'}
+  {@const z = $project?.pcb.zones[$selection.idx]}
+  {#if z}
+    <header class="hdr">
+      <div class="titles">
+        <h3>Zone</h3>
+        {#if z.netName}<span class="value">{z.netName}</span>{/if}
+      </div>
+    </header>
+    <dl>
+      <dt>Net</dt><dd class="mono">{z.netName ?? '—'}</dd>
+      <dt>Layer</dt><dd class="mono">{z.layerId}</dd>
+      <dt>Area</dt><dd class="mono">{polygonAreaMm2(z.polygon).toFixed(2)} mm²</dd>
+      <dt>Vertices</dt><dd class="mono">{z.polygon.length}</dd>
+    </dl>
+    {#if z.netName}
+      <button class="action" onclick={() => highlightNet(z.netName!)}>Highlight net</button>
+    {/if}
+  {:else}
+    <p class="empty">Zone not found</p>
+  {/if}
+{:else if $selection.kind === 'via'}
+  {@const v = $project?.pcb.vias[$selection.idx]}
+  {#if v}
+    <header class="hdr">
+      <div class="titles">
+        <h3>Via</h3>
+        {#if v.netName}<span class="value">{v.netName}</span>{/if}
+      </div>
+    </header>
+    <dl>
+      <dt>Net</dt><dd class="mono">{v.netName ?? '—'}</dd>
+      <dt>Span</dt><dd class="mono">{v.layerFrom} → {v.layerTo}</dd>
+      <dt>Diameter</dt><dd class="mono">{v.diameterMm.toFixed(3)} mm</dd>
+      <dt>Drill</dt><dd class="mono">{v.drillMm.toFixed(3)} mm</dd>
+      <dt>Position</dt>
+      <dd class="mono">{v.position.x.toFixed(2)}, {v.position.y.toFixed(2)}</dd>
+    </dl>
+    {#if v.netName}
+      <button class="action" onclick={() => highlightNet(v.netName!)}>Highlight net</button>
+    {/if}
+  {:else}
+    <p class="empty">Via not found</p>
+  {/if}
 {/if}
 
 <style>
@@ -192,5 +264,21 @@
   .table-wrap td.num, .table-wrap th.num {
     font-family: var(--kv-font-mono);
     text-align: right; width: 2.2rem;
+  }
+  .action {
+    width: 100%;
+    padding: 6px 10px;
+    margin-top: 0.3rem;
+    background: var(--kv-surface-2);
+    color: var(--kv-text);
+    border: 1px solid var(--kv-border);
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 0.78rem;
+  }
+  .action:hover {
+    background: var(--kv-accent, #6aa6ff);
+    color: white;
+    border-color: var(--kv-accent, #6aa6ff);
   }
 </style>
