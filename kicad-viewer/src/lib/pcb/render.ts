@@ -102,22 +102,20 @@ export function drawPcb(
   // world so it doesn't explode at extreme zoom-in.
   const refdesHeightMm = Math.min(1.5, 12 / pxPerMm);
   if (refdesHeightMm * pxPerMm >= 7) {
+    const activeSideForRefdes = activeSide === 'back' ? 'bottom' : 'top';
     ctx.save();
     ctx.fillStyle = '#c8c8c8';
     ctx.font = `${refdesHeightMm}px ui-sans-serif, system-ui, sans-serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     for (const fp of scene.footprints) {
-      // Mirror-aware rendering: for bottom-side, text would appear mirrored because
-      // the canvas is not flipped globally. We draw refdes in the footprint's natural
-      // coordinate frame (top-side convention). Users who care about accurate
-      // bottom-side rendering can still toggle the B.Fab layer and read there.
+      if (fp.side !== activeSideForRefdes) continue;
       ctx.fillText(fp.refdes, fp.position.x, fp.position.y);
     }
     ctx.restore();
   }
 
-  drawCopperLabels(ctx, scene, layers, visible, pxPerMm);
+  drawCopperLabels(ctx, scene, layers, visible, pxPerMm, activeLayer);
 
   ctx.restore();
 }
@@ -200,13 +198,10 @@ function drawCopperLabels(
   scene: PcbScene,
   layers: LayerInfo[],
   visible: Map<string, boolean>,
-  pxPerMm: number
+  pxPerMm: number,
+  activeLayer: string
 ): void {
-  const copperIds: string[] = [
-    'F.Cu',
-    ...layers.filter((l) => l.type === 'In.Cu').map((l) => l.id),
-    'B.Cu'
-  ];
+  const copperIds: string[] = [activeLayer];
   const seenPads = new Set<Pad>();
   const placed: LabelBox[] = [];
 
