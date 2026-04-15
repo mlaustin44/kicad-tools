@@ -1,4 +1,4 @@
-import { KicadSch, type SchematicSymbol } from '$lib/parser/schematic';
+import { KicadSch, type SchematicSymbol, type LibSymbol, type PinDefinition } from '$lib/parser/schematic';
 import {
   KicadPCB,
   ArcSegment,
@@ -10,6 +10,7 @@ import type {
   Sheet,
   Component,
   Net,
+  Pin,
   PcbData,
   LayerInfo,
   FootprintGeom,
@@ -28,10 +29,11 @@ export interface AdapterInput {
 export function toProject(input: AdapterInput): Project {
   const parsedSchematics = parseSchematics(input.schematics);
   const sheets = buildSheets(parsedSchematics, input.rootSchematic, input.schematics);
-  const components = buildComponents(parsedSchematics, sheets, input.rootSchematic);
 
   const pcb = new KicadPCB('pcb', input.pcb);
   const pcbData = buildPcb(pcb);
+
+  const components = buildComponents(parsedSchematics, sheets, input.rootSchematic, pcbData);
   const nets = buildNets(pcb, pcbData, components);
 
   mergePcbPositions(components, pcbData);
@@ -113,7 +115,8 @@ function paperBounds(sch: KicadSch | undefined): Rect {
 function buildComponents(
   parsed: Map<string, KicadSch>,
   sheets: Sheet[],
-  root: string
+  root: string,
+  pcb: PcbData
 ): Component[] {
   const comps: Component[] = [];
   const sheetByFilename = new Map<string, Sheet>();
@@ -125,6 +128,9 @@ function buildComponents(
         : sheets.find((s) => s.name === name);
     if (sheet) sheetByFilename.set(filename, sheet);
   }
+
+  const footprintByRefdes = new Map<string, FootprintGeom>();
+  for (const fp of pcb.footprints) footprintByRefdes.set(fp.refdes, fp);
 
   for (const [filename, sch] of parsed) {
     const sheet = sheetByFilename.get(filename);
@@ -144,7 +150,7 @@ function buildComponents(
         footprint: s.footprint || '',
         sheetUuid: sheet.uuid,
         dnp: s.dnp ?? false,
-        pins: []
+        pins: extractPins(s, footprintByRefdes.get(refdes))
       };
 
       const mpn = s.get_property_text?.('MPN');
@@ -159,6 +165,27 @@ function buildComponents(
     }
   }
   return comps;
+}
+
+function extractPins(sym: SchematicSymbol, fp: FootprintGeom | undefined): Pin[] {
+  let lib: LibSymbol | undefined;
+  try {
+    lib = sym.lib_symbol;
+  } catch {
+    return [];
+  }
+  if (!lib) return [];
+  const libPins: PinDefinition[] = [...(lib.pins ?? [])];
+  for (const child of lib.children ?? []) libPins.push(...(child.pins ?? []));
+
+  const pins: Pin[] = [];
+  for (const p of libPins) {
+    const number = p.number?.text ?? '?';
+    const name = p.name?.text ?? '';
+    const pad = fp?.pads.find((pd) => pd.number === number);
+    pins.push({ number, name, netName: pad?.netName ?? null });
+  }
+  return pins;
 }
 
 function buildPcb(pcb: KicadPCB): PcbData {
