@@ -9,7 +9,8 @@
   import SchematicView from '$lib/views/SchematicView.svelte';
   import SheetTree from '$lib/ui/SheetTree.svelte';
   import SearchBar from '$lib/ui/SearchBar.svelte';
-  import { project } from '$lib/stores/project';
+  import { project, componentsByUuid } from '$lib/stores/project';
+  import { selection } from '$lib/stores/selection';
 
   let tab = $state('sch');
   let searchOpen = $state(false);
@@ -18,6 +19,15 @@
 
   $effect(() => {
     if (!activeSheet && $project) activeSheet = $project.sheets[0]?.uuid ?? null;
+  });
+
+  $effect(() => {
+    const s = $selection;
+    if (!s || s.kind !== 'component' || s.source === 'sch') return;
+    const c = $componentsByUuid.get(s.uuid);
+    if (!c) return;
+    if (activeSheet !== c.sheetUuid) activeSheet = c.sheetUuid;
+    if (tab !== 'sch' && tab !== 'split') tab = 'sch';
   });
 
   onMount(() =>

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { project, sheetsByUuid } from '$lib/stores/project';
+  import { project, sheetsByUuid, componentsByUuid } from '$lib/stores/project';
   import { selectComponent, selection } from '$lib/stores/selection';
   import { buildSheetSvg } from '$lib/sch/render';
   import Breadcrumb from '$lib/ui/Breadcrumb.svelte';
@@ -73,6 +73,24 @@
     if ($selection?.kind !== 'component') return null;
     const c = $project?.components.find((c) => c.uuid === $selection.uuid);
     return c?.refdes ?? null;
+  });
+
+  $effect(() => {
+    const s = $selection;
+    if (!s || s.source === 'sch' || s.kind !== 'component') return;
+    const c = $componentsByUuid.get(s.uuid);
+    if (!c || c.sheetUuid !== activeSheetUuid) return;
+
+    const el = host?.querySelector(`[data-uuid="${c.uuid.replace(/"/g, '\\"')}"]`);
+    if (!el || !host) return;
+
+    const bbox = (el as SVGGraphicsElement).getBoundingClientRect();
+    const stageBox = host.getBoundingClientRect();
+    if (stageBox.width === 0 && stageBox.height === 0) return;
+    const dx = stageBox.width / 2 - (bbox.left + bbox.width / 2 - stageBox.left);
+    const dy = stageBox.height / 2 - (bbox.top + bbox.height / 2 - stageBox.top);
+    if (dx === 0 && dy === 0) return;
+    viewport = { x: viewport.x + dx, y: viewport.y + dy, scale: viewport.scale };
   });
 </script>
 
