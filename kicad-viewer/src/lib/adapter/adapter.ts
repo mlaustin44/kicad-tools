@@ -3,8 +3,18 @@ import {
   KicadPCB,
   ArcSegment,
   LineSegment,
-  type Footprint as ParserFootprint
+  Line as ParserLine,
+  Arc as ParserArc,
+  Poly as ParserPoly,
+  Rect as ParserRect,
+  Circle as ParserCircle,
+  Text as ParserText,
+  type Footprint as ParserFootprint,
+  type Pad as ParserPad,
+  type Zone as ParserZone,
+  type Drawing as ParserDrawing
 } from '$lib/parser/board';
+import { Vec2 } from '$lib/parser/base/math';
 import type {
   Project,
   Sheet,
@@ -15,6 +25,11 @@ import type {
   LayerInfo,
   FootprintGeom,
   TrackSeg,
+  Pad as ModelPad,
+  Graphic,
+  GraphicGeom,
+  Zone as ModelZone,
+  Via as ModelVia,
   Point,
   Rect
 } from '$lib/model/project';
@@ -200,8 +215,11 @@ function buildPcb(pcb: KicadPCB): PcbData {
   });
 
   const boundsMm = computeBounds(pcb);
-  const footprints = pcb.footprints.map(toFootprintGeom);
+  const footprints = pcb.footprints.map((fp) => toFootprintGeom(fp, pcb));
   const tracks = buildTracks(pcb);
+  const vias = buildVias(pcb);
+  const zones = buildZones(pcb);
+  const boardGraphics = buildBoardGraphics(pcb);
 
   return {
     boundsMm,
@@ -209,9 +227,10 @@ function buildPcb(pcb: KicadPCB): PcbData {
     stackup: [],
     footprints,
     tracks,
-    vias: [],
-    zones: [],
-    drills: []
+    vias,
+    zones,
+    drills: [],
+    boardGraphics
   };
 }
 
@@ -246,8 +265,9 @@ function computeBounds(pcb: KicadPCB): Rect {
   };
 }
 
-function toFootprintGeom(fp: ParserFootprint): FootprintGeom {
+function toFootprintGeom(fp: ParserFootprint, pcb: KicadPCB): FootprintGeom {
   const pos: Point = { x: fp.at?.position?.x ?? 0, y: fp.at?.position?.y ?? 0 };
+  const rotationDeg = fp.at?.rotation ?? 0;
   const side: 'top' | 'bottom' = fp.layer === 'B.Cu' ? 'bottom' : 'top';
   const bbox = fp.bbox;
   const bboxMm: Rect = bbox
@@ -258,12 +278,226 @@ function toFootprintGeom(fp: ParserFootprint): FootprintGeom {
     uuid: fp.uuid ?? fp.tstamp ?? `${fp.reference}-${pos.x},${pos.y}`,
     refdes: fp.reference ?? '?',
     position: pos,
-    rotationDeg: fp.at?.rotation ?? 0,
+    rotationDeg,
     side,
     bboxMm,
-    pads: [],
-    graphics: []
+    pads: buildPads(fp, pcb),
+    graphics: buildFootprintGraphics(fp)
   };
+}
+
+function buildPads(fp: ParserFootprint, pcb: KicadPCB): ModelPad[] {
+  const pads: ModelPad[] = [];
+  for (const p of fp.pads ?? []) {
+    pads.push(toModelPad(p, pcb));
+  }
+  return pads;
+}
+
+function toModelPad(pad: ParserPad, pcb: KicadPCB): ModelPad {
+  const layerIds = expandPadLayers(pad.layers ?? [], pcb);
+  // Pad position is in footprint-local frame.
+  const pos: Point = {
+    x: pad.at?.position?.x ?? 0,
+    y: pad.at?.position?.y ?? 0
+  };
+  const size = { w: pad.size?.x ?? 0, h: pad.size?.y ?? 0 };
+  return {
+    number: String(pad.number ?? ''),
+    shape: String(pad.shape ?? 'rect'),
+    layerIds,
+    positionMm: pos,
+    sizeMm: size,
+    netName: pad.netname ?? null
+  };
+}
+
+// KiCad pads can use wildcard layer patterns like "F.Cu", "*.Cu" meaning all copper,
+// "*.Mask" meaning both masks, etc. Expand wildcards against the board's layer list.
+function expandPadLayers(patterns: string[], pcb: KicadPCB): string[] {
+  const out = new Set<string>();
+  const allIds = pcb.layers.map((l) => l.canonical_name ?? '').filter((s) => s.length > 0);
+  for (const p of patterns) {
+    if (p.includes('*')) {
+      // Convert glob (e.g. "*.Cu", "F.*") to regex.
+      const re = new RegExp('^' + p.replace(/\./g, '\\.').replace(/\*/g, '[^.]*') + '$');
+      for (const id of allIds) if (re.test(id)) out.add(id);
+    } else {
+      out.add(p);
+    }
+  }
+  return [...out];
+}
+
+function buildFootprintGraphics(fp: ParserFootprint): Graphic[] {
+  const out: Graphic[] = [];
+  for (const d of fp.drawings ?? []) {
+    const g = drawingToGraphic(d);
+    if (g) out.push(g);
+  }
+  return out;
+}
+
+function buildBoardGraphics(pcb: KicadPCB): Graphic[] {
+  const out: Graphic[] = [];
+  for (const d of pcb.drawings ?? []) {
+    const g = drawingToGraphic(d);
+    if (g) out.push(g);
+  }
+  return out;
+}
+
+type AnyBoardDrawing = ParserDrawing | ParserFootprint['drawings'][number];
+
+function drawingToGraphic(d: AnyBoardDrawing): Graphic | null {
+  if (d instanceof ParserLine) {
+    const layerId = d.layer ?? '';
+    const widthMm = d.width ?? d.stroke?.width ?? 0.15;
+    const geom: GraphicGeom = {
+      kind: 'line',
+      a: { x: d.start.x, y: d.start.y },
+      b: { x: d.end.x, y: d.end.y },
+      widthMm
+    };
+    return { layerId, geom };
+  }
+  if (d instanceof ParserArc) {
+    const layerId = d.layer ?? '';
+    const widthMm = d.width ?? d.stroke?.width ?? 0.15;
+    // Use MathArc from parser to derive center/radius/angles.
+    const arc = d.arc;
+    const center = arc.center;
+    const radiusMm = arc.radius;
+    const startDeg = arc.start_angle.degrees;
+    const endDeg = arc.end_angle.degrees;
+    const geom: GraphicGeom = {
+      kind: 'arc',
+      center: { x: center.x, y: center.y },
+      radiusMm,
+      startDeg,
+      endDeg,
+      widthMm
+    };
+    return { layerId, geom };
+  }
+  if (d instanceof ParserPoly) {
+    const layerId = d.layer ?? '';
+    const widthMm = d.width ?? d.stroke?.width ?? 0.15;
+    const points = d.polyline.map((p: Vec2) => ({ x: p.x, y: p.y }));
+    const filled = d.fill === 'solid' || d.fill === 'yes' || d.fill === 'true';
+    const geom: GraphicGeom = { kind: 'polygon', points, widthMm, filled };
+    return { layerId, geom };
+  }
+  if (d instanceof ParserRect) {
+    const layerId = d.layer ?? '';
+    const widthMm = d.width ?? d.stroke?.width ?? 0.15;
+    const x1 = d.start.x;
+    const y1 = d.start.y;
+    const x2 = d.end.x;
+    const y2 = d.end.y;
+    const filled = d.fill === 'solid' || d.fill === 'yes' || d.fill === 'true';
+    const geom: GraphicGeom = {
+      kind: 'polygon',
+      points: [
+        { x: x1, y: y1 },
+        { x: x2, y: y1 },
+        { x: x2, y: y2 },
+        { x: x1, y: y2 }
+      ],
+      widthMm,
+      filled
+    };
+    return { layerId, geom };
+  }
+  if (d instanceof ParserCircle) {
+    const layerId = d.layer ?? '';
+    const widthMm = d.width ?? d.stroke?.width ?? 0.15;
+    const cx = d.center.x;
+    const cy = d.center.y;
+    const dx = d.end.x - cx;
+    const dy = d.end.y - cy;
+    const radiusMm = Math.sqrt(dx * dx + dy * dy);
+    const geom: GraphicGeom = {
+      kind: 'arc',
+      center: { x: cx, y: cy },
+      radiusMm,
+      startDeg: 0,
+      endDeg: 360,
+      widthMm
+    };
+    return { layerId, geom };
+  }
+  if (d instanceof ParserText) {
+    const layerId = d.layer?.name ?? '';
+    if (d.hide) return null;
+    const heightMm = d.effects?.font?.size?.y ?? 1.0;
+    const geom: GraphicGeom = {
+      kind: 'text',
+      position: { x: d.at?.position?.x ?? 0, y: d.at?.position?.y ?? 0 },
+      rotationDeg: d.at?.rotation ?? 0,
+      heightMm,
+      text: d.shown_text ?? d.text ?? ''
+    };
+    return { layerId, geom };
+  }
+  return null;
+}
+
+function buildZones(pcb: KicadPCB): ModelZone[] {
+  const out: ModelZone[] = [];
+  const collect = (zone: ParserZone): void => {
+    const netName = zone.net_name || pcb.get_netname_by_number(zone.net) || null;
+    // Prefer filled polygons per layer when available — render matches plotted output.
+    if (zone.filled_polygons && zone.filled_polygons.length > 0) {
+      for (const fp of zone.filled_polygons) {
+        const layerId =
+          (fp as unknown as { layer?: string }).layer ??
+          zone.layer ??
+          zone.layers?.[0] ??
+          '';
+        if (!layerId) continue;
+        out.push({
+          layerId,
+          polygon: fp.polyline.map((p: Vec2) => ({ x: p.x, y: p.y })),
+          netName
+        });
+      }
+      return;
+    }
+    // Fallback: outline polygons (hatched zones before fill).
+    const layerIds = zone.layers?.length ? zone.layers : zone.layer ? [zone.layer] : [];
+    for (const poly of zone.polygons ?? []) {
+      for (const layerId of layerIds) {
+        out.push({
+          layerId,
+          polygon: poly.polyline.map((p: Vec2) => ({ x: p.x, y: p.y })),
+          netName
+        });
+      }
+    }
+  };
+  for (const z of pcb.zones ?? []) collect(z);
+  for (const fp of pcb.footprints ?? []) {
+    for (const z of fp.zones ?? []) collect(z);
+  }
+  return out;
+}
+
+function buildVias(pcb: KicadPCB): ModelVia[] {
+  const out: ModelVia[] = [];
+  for (const v of pcb.vias ?? []) {
+    const layers = v.layers ?? [];
+    const netName = pcb.get_netname_by_number(v.net) ?? null;
+    out.push({
+      position: { x: v.at?.position?.x ?? 0, y: v.at?.position?.y ?? 0 },
+      diameterMm: v.size ?? 0.6,
+      drillMm: v.drill ?? 0.3,
+      layerFrom: layers[0] ?? 'F.Cu',
+      layerTo: layers[1] ?? 'B.Cu',
+      netName
+    });
+  }
+  return out;
 }
 
 function buildTracks(pcb: KicadPCB): TrackSeg[] {

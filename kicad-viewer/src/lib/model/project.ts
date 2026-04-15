@@ -52,6 +52,7 @@ export interface PcbData {
   vias: Via[];
   zones: Zone[];
   drills: Drill[];
+  boardGraphics: Graphic[];          // board-level lines/arcs/polys/text (edge cuts, free drawings)
 }
 
 export interface LayerInfo { id: string; name: string; type: LayerType; defaultColor: string; }
