@@ -1,7 +1,0 @@
-{
-  "meta": { "filename": "tiny.kicad_pro", "version": 1 },
-  "board": { "design_settings": {} },
-  "schematic": {},
-  "pcbnew": {},
-  "sheets": [ ["00000000-0000-4000-8000-000000000001", "Root"] ]
-}

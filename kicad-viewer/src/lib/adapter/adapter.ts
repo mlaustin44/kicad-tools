@@ -1,6 +1,22 @@
-import { KicadSch } from '$lib/parser/schematic';
-import { KicadPCB } from '$lib/parser/board';
-import type { Project, Sheet, Component, Net, PcbData, LayerInfo } from '$lib/model/project';
+import { KicadSch, type SchematicSymbol } from '$lib/parser/schematic';
+import {
+  KicadPCB,
+  ArcSegment,
+  LineSegment,
+  type Footprint as ParserFootprint
+} from '$lib/parser/board';
+import type {
+  Project,
+  Sheet,
+  Component,
+  Net,
+  PcbData,
+  LayerInfo,
+  FootprintGeom,
+  TrackSeg,
+  Point,
+  Rect
+} from '$lib/model/project';
 
 export interface AdapterInput {
   pro: string;
@@ -10,87 +26,124 @@ export interface AdapterInput {
 }
 
 export function toProject(input: AdapterInput): Project {
-  const sheets = buildSheets(input.schematics, input.rootSchematic);
-  const components = buildComponents(input.schematics, sheets);
-  const pcb = buildPcb(input.pcb);
-  const nets = buildNets(pcb, components);
+  const parsedSchematics = parseSchematics(input.schematics);
+  const sheets = buildSheets(parsedSchematics, input.rootSchematic);
+  const components = buildComponents(parsedSchematics, sheets, input.rootSchematic);
 
-  mergePcbPositions(components, pcb);
+  const pcb = new KicadPCB('pcb', input.pcb);
+  const pcbData = buildPcb(pcb);
+  const nets = buildNets(pcb, pcbData, components);
+
+  mergePcbPositions(components, pcbData);
 
   return {
     name: deriveName(input.rootSchematic),
     sheets,
     components,
     nets,
-    pcb,
+    pcb: pcbData,
     source: 'raw'
   };
 }
 
-// — helpers (kept narrow; extend as real fixtures demand) —
+// — helpers —
 
 function deriveName(path: string): string {
   return path.replace(/\.kicad_sch$/, '').split('/').pop() ?? 'project';
 }
 
-function buildSheets(src: Record<string, string>, root: string): Sheet[] {
-  const sheets: Sheet[] = [];
+function parseSchematics(src: Record<string, string>): Map<string, KicadSch> {
+  const out = new Map<string, KicadSch>();
   for (const [filename, text] of Object.entries(src)) {
-    const sch = new KicadSch(filename, text);
+    out.set(filename, new KicadSch(filename, text));
+  }
+  return out;
+}
+
+function buildSheets(parsed: Map<string, KicadSch>, root: string): Sheet[] {
+  const sheets: Sheet[] = [];
+  const rootSch = parsed.get(root);
+
+  const rootUuid = rootSch?.uuid ?? root;
+  const rootName = root.replace(/\.kicad_sch$/, '');
+  sheets.push({
+    uuid: rootUuid,
+    name: rootName,
+    path: ['root'],
+    parent: null,
+    componentUuids: [],
+    boundsMm: paperBounds(rootSch)
+  });
+
+  // One level of children: any other schematic in the bundle, placed under root.
+  for (const [filename, sch] of parsed.entries()) {
+    if (filename === root) continue;
+    const name = filename.replace(/\.kicad_sch$/, '');
     sheets.push({
-      uuid: (sch as { uuid?: string }).uuid ?? filename,
-      name: filename.replace(/\.kicad_sch$/, ''),
-      path: filename === root ? ['root'] : ['root', filename.replace(/\.kicad_sch$/, '')],
-      parent: filename === root ? null : (sheets[0]?.uuid ?? null),
+      uuid: sch.uuid ?? filename,
+      name,
+      path: ['root', name],
+      parent: rootUuid,
       componentUuids: [],
-      boundsMm: { x: 0, y: 0, w: 297, h: 210 } // A4 placeholder; refine via sch
+      boundsMm: paperBounds(sch)
     });
   }
   return sheets;
 }
 
-function buildComponents(src: Record<string, string>, sheets: Sheet[]): Component[] {
+function paperBounds(sch: KicadSch | undefined): Rect {
+  // Default to A4 if paper missing; KiCad paper sizes are in mm.
+  if (!sch) return { x: 0, y: 0, w: 297, h: 210 };
+  const paper = (sch as unknown as { paper?: { width?: number; height?: number } }).paper;
+  const w = paper?.width ?? 297;
+  const h = paper?.height ?? 210;
+  return { x: 0, y: 0, w, h };
+}
+
+function buildComponents(
+  parsed: Map<string, KicadSch>,
+  sheets: Sheet[],
+  root: string
+): Component[] {
   const comps: Component[] = [];
-  for (const [filename, text] of Object.entries(src)) {
-    const sch = new KicadSch(filename, text);
+  const sheetByFilename = new Map<string, Sheet>();
+  for (const [filename] of parsed) {
+    const name = filename.replace(/\.kicad_sch$/, '');
     const sheet =
-      sheets.find((s) => s.name === filename.replace(/\.kicad_sch$/, '')) ?? sheets[0];
+      filename === root
+        ? sheets.find((s) => s.path.length === 1)
+        : sheets.find((s) => s.name === name);
+    if (sheet) sheetByFilename.set(filename, sheet);
+  }
+
+  for (const [filename, sch] of parsed) {
+    const sheet = sheetByFilename.get(filename);
     if (!sheet) continue;
 
-    const symbolsMap = (sch as { symbols?: Map<string, unknown> | unknown[] }).symbols;
-    const symbolIter: Iterable<unknown> = symbolsMap instanceof Map
-      ? symbolsMap.values()
-      : (Array.isArray(symbolsMap) ? symbolsMap : []);
+    for (const sym of sch.symbols.values()) {
+      const s = sym as SchematicSymbol;
+      const refdes = s.reference || '?';
+      // Skip power symbols and unreferenced entries (starts with '#').
+      if (refdes.startsWith('#')) continue;
 
-    for (const symRaw of symbolIter) {
-      const sym = symRaw as {
-        reference?: string;
-        value?: string;
-        footprint?: string;
-        uuid?: string;
-        dnp?: boolean;
-        datasheet?: string;
-        getProperty?: (name: string) => { value?: string } | undefined;
-      };
-      const refdes = sym.reference ?? sym.getProperty?.('Reference')?.value ?? '?';
-      const value = sym.value ?? sym.getProperty?.('Value')?.value ?? '';
-      const fp = sym.footprint ?? sym.getProperty?.('Footprint')?.value ?? '';
-      const uuid = sym.uuid ?? `${sheet.uuid}:${refdes}`;
+      const uuid = s.uuid || `${sheet.uuid}:${refdes}`;
       const component: Component = {
         uuid,
         refdes,
-        value,
-        footprint: fp,
+        value: s.value || '',
+        footprint: s.footprint || '',
         sheetUuid: sheet.uuid,
-        dnp: sym.dnp ?? false,
+        dnp: s.dnp ?? false,
         pins: []
       };
-      const mpn = sym.getProperty?.('MPN')?.value;
+
+      const mpn = s.get_property_text?.('MPN');
       if (mpn) component.mpn = mpn;
-      const mfg = sym.getProperty?.('Manufacturer')?.value;
+      const mfg = s.get_property_text?.('Manufacturer');
       if (mfg) component.manufacturer = mfg;
-      const datasheet = sym.datasheet ?? sym.getProperty?.('Datasheet')?.value;
-      if (datasheet) component.datasheet = datasheet;
+      const datasheet = s.get_property_text?.('Datasheet');
+      if (datasheet && datasheet !== '~') component.datasheet = datasheet;
+
       comps.push(component);
       sheet.componentUuids.push(uuid);
     }
@@ -98,39 +151,157 @@ function buildComponents(src: Record<string, string>, sheets: Sheet[]): Componen
   return comps;
 }
 
-function buildPcb(pcbText: string): PcbData {
-  const pcb = new KicadPCB('pcb', pcbText);
-  const rawLayers = (pcb as { layers?: Array<{ canonical_name?: string; name?: string }> }).layers ?? [];
-  const layers: LayerInfo[] = rawLayers.map((l) => {
-    const name = l.canonical_name ?? l.name ?? '';
+function buildPcb(pcb: KicadPCB): PcbData {
+  const layers: LayerInfo[] = pcb.layers.map((l) => {
+    const id = l.canonical_name ?? '';
     return {
-      id: name,
-      name,
-      type: classifyLayer(name),
-      defaultColor: defaultColorFor(name)
+      id,
+      name: l.user_name ?? id,
+      type: classifyLayer(id),
+      defaultColor: defaultColorFor(id)
     };
   });
+
+  const boundsMm = computeBounds(pcb);
+  const footprints = pcb.footprints.map(toFootprintGeom);
+  const tracks = buildTracks(pcb);
+
   return {
-    boundsMm: { x: 0, y: 0, w: 0, h: 0 },
+    boundsMm,
     layers,
     stackup: [],
-    footprints: [],
-    tracks: [],
+    footprints,
+    tracks,
     vias: [],
     zones: [],
     drills: []
   };
 }
 
-function buildNets(pcb: PcbData, _components: Component[]): Net[] {
-  const names = new Set<string>();
-  for (const t of pcb.tracks) if (t.netName) names.add(t.netName);
-  for (const v of pcb.vias) if (v.netName) names.add(v.netName);
-  return [...names].map((name) => ({ name, refdesPins: [] }));
+function computeBounds(pcb: KicadPCB): Rect {
+  const bbox = pcb.edge_cuts_bbox;
+  if (bbox && bbox.w > 0 && bbox.h > 0) {
+    return { x: bbox.x, y: bbox.y, w: bbox.w, h: bbox.h };
+  }
+  // Fallback: union of footprint positions with a small margin.
+  if (pcb.footprints.length === 0) {
+    return { x: 0, y: 0, w: 0, h: 0 };
+  }
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const fp of pcb.footprints) {
+    const p = fp.at?.position;
+    if (!p) continue;
+    if (p.x < minX) minX = p.x;
+    if (p.y < minY) minY = p.y;
+    if (p.x > maxX) maxX = p.x;
+    if (p.y > maxY) maxY = p.y;
+  }
+  if (!isFinite(minX)) return { x: 0, y: 0, w: 0, h: 0 };
+  const margin = 5;
+  return {
+    x: minX - margin,
+    y: minY - margin,
+    w: maxX - minX + 2 * margin,
+    h: maxY - minY + 2 * margin
+  };
 }
 
-function mergePcbPositions(_c: Component[], _p: PcbData): void {
-  /* extended in Task 12 */
+function toFootprintGeom(fp: ParserFootprint): FootprintGeom {
+  const pos: Point = { x: fp.at?.position?.x ?? 0, y: fp.at?.position?.y ?? 0 };
+  const side: 'top' | 'bottom' = fp.layer === 'B.Cu' ? 'bottom' : 'top';
+  const bbox = fp.bbox;
+  const bboxMm: Rect = bbox
+    ? { x: bbox.x, y: bbox.y, w: bbox.w, h: bbox.h }
+    : { x: pos.x - 2.5, y: pos.y - 2.5, w: 5, h: 5 };
+
+  return {
+    uuid: fp.uuid ?? fp.tstamp ?? `${fp.reference}-${pos.x},${pos.y}`,
+    refdes: fp.reference ?? '?',
+    position: pos,
+    rotationDeg: fp.at?.rotation ?? 0,
+    side,
+    bboxMm,
+    pads: [],
+    graphics: []
+  };
+}
+
+function buildTracks(pcb: KicadPCB): TrackSeg[] {
+  const tracks: TrackSeg[] = [];
+  for (const seg of pcb.segments) {
+    if (seg instanceof LineSegment) {
+      tracks.push({
+        layerId: seg.layer,
+        a: { x: seg.start.x, y: seg.start.y },
+        b: { x: seg.end.x, y: seg.end.y },
+        widthMm: seg.width,
+        netName: seg.netname ?? null
+      });
+    } else if (seg instanceof ArcSegment) {
+      // Approximate an arc as start-end chord for now.
+      tracks.push({
+        layerId: seg.layer,
+        a: { x: seg.start.x, y: seg.start.y },
+        b: { x: seg.end.x, y: seg.end.y },
+        widthMm: seg.width,
+        netName: seg.netname ?? null
+      });
+    }
+  }
+  return tracks;
+}
+
+function buildNets(pcb: KicadPCB, pcbData: PcbData, components: Component[]): Net[] {
+  const byRefdes = new Map<string, Component>();
+  for (const c of components) byRefdes.set(c.refdes, c);
+
+  // Map of net name -> list of (refdes, pad number) from footprint pads.
+  const netPins = new Map<string, Array<{ refdes: string; pin: string }>>();
+  for (const fp of pcb.footprints) {
+    for (const pad of fp.pads) {
+      const name = pad.net?.name;
+      if (!name) continue;
+      if (!byRefdes.has(fp.reference)) continue;
+      const arr = netPins.get(name) ?? [];
+      arr.push({ refdes: fp.reference, pin: pad.number });
+      netPins.set(name, arr);
+    }
+  }
+
+  // Prefer the parser's net list (covers nets with no pads too); otherwise
+  // derive from tracks/vias.
+  const names = new Set<string>();
+  for (const n of pcb.nets) {
+    if (n.name) names.add(n.name);
+  }
+  if (names.size === 0) {
+    for (const t of pcbData.tracks) if (t.netName) names.add(t.netName);
+    for (const v of pcbData.vias) if (v.netName) names.add(v.netName);
+  }
+
+  const nets: Net[] = [];
+  for (const name of names) {
+    // Skip the special "no-net" entry KiCad emits as an empty string.
+    if (!name) continue;
+    nets.push({ name, refdesPins: netPins.get(name) ?? [] });
+  }
+  return nets;
+}
+
+function mergePcbPositions(components: Component[], pcb: PcbData): void {
+  const byRef = new Map<string, FootprintGeom>();
+  for (const fp of pcb.footprints) byRef.set(fp.refdes, fp);
+
+  for (const c of components) {
+    const fp = byRef.get(c.refdes);
+    if (!fp) continue;
+    c.positionMm = { x: fp.position.x, y: fp.position.y };
+    c.rotationDeg = fp.rotationDeg;
+    c.side = fp.side;
+  }
 }
 
 function classifyLayer(name: string): LayerInfo['type'] {
