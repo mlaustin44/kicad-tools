@@ -94,6 +94,9 @@
         });
       },
       onPreset: (preset) => {
+        const threeDIsActive = tab === '3d' ||
+          (tab === 'split' && (leftPane === '3d' || rightPane === '3d'));
+        if (!threeDIsActive) return;
         // Clear-then-set so the effect re-fires when the same key is pressed twice.
         presetRequested = null;
         queueMicrotask(() => (presetRequested = preset));
