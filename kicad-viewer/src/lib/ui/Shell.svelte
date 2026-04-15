@@ -8,12 +8,13 @@
     tab: string;
     onTabChange: (v: string) => void;
     onClear?: () => void;
+    onHelp?: () => void;
     children: import('svelte').Snippet;
     sidebar?: import('svelte').Snippet;
     inspector?: import('svelte').Snippet;
     cursorMm?: { x: number; y: number } | null;
   }
-  let { tab, onTabChange, onClear, children, sidebar, inspector, cursorMm }: Props = $props();
+  let { tab, onTabChange, onClear, onHelp, children, sidebar, inspector, cursorMm }: Props = $props();
 </script>
 
 <div class="shell">
@@ -24,6 +25,9 @@
     <div class="actions">
       {#if onClear}
         <button onclick={onClear} class="iconbtn" aria-label="Clear project">Clear</button>
+      {/if}
+      {#if onHelp}
+        <button onclick={onHelp} class="iconbtn" aria-label="Keyboard shortcuts">?</button>
       {/if}
       <button onclick={toggleTheme} class="iconbtn" aria-label="Toggle theme">{$theme === 'dark' ? '☾' : '☀'}</button>
     </div>

@@ -4,6 +4,7 @@
   import { get } from 'svelte/store';
   import { installKeyboardShortcuts } from '$lib/keys';
   import Shell from '$lib/ui/Shell.svelte';
+  import HelpOverlay from '$lib/ui/HelpOverlay.svelte';
   import DropZone from '$lib/ui/DropZone.svelte';
   import Toast from '$lib/ui/Toast.svelte';
   import Inspector from '$lib/ui/Inspector.svelte';
@@ -23,6 +24,7 @@
 
   let tab = $state('sch');
   let searchOpen = $state(false);
+  let helpOpen = $state(false);
   let fitRequested = $state(0);
   let presetRequested = $state<'top' | 'bottom' | 'iso' | null>(null);
   let activeSheet = $state<string | null>(null);
@@ -92,7 +94,7 @@
         presetRequested = null;
         queueMicrotask(() => (presetRequested = preset));
       },
-      onHelp: () => {}
+      onHelp: () => (helpOpen = !helpOpen)
     });
 
     hydrateFromIdb();
@@ -133,7 +135,7 @@
 <svelte:head><title>Viewer — kicad-viewer</title></svelte:head>
 
 {#if $project}
-  <Shell {tab} onTabChange={(v) => (tab = v)} {cursorMm} onClear={clearProject}>
+  <Shell {tab} onTabChange={(v) => (tab = v)} {cursorMm} onClear={clearProject} onHelp={() => (helpOpen = true)}>
     {#snippet sidebar()}
       {#if tab === 'sch'}
         <SheetTree activeUuid={activeSheet} onSelect={(u) => (activeSheet = u)} />
@@ -210,6 +212,8 @@
 {/if}
 
 <SearchBar open={searchOpen} onClose={() => (searchOpen = false)} />
+
+<HelpOverlay open={helpOpen} onClose={() => (helpOpen = false)} />
 
 <Toast />
 
