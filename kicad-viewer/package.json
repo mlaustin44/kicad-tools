@@ -28,6 +28,7 @@
     "vitest": "^4.1.4"
   },
   "dependencies": {
+    "fflate": "^0.8.2",
     "open-props": "^1.7.23"
   }
 }
