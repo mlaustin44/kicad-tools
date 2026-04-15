@@ -1,7 +1,8 @@
 <script lang="ts">
   import { untrack } from 'svelte';
   import { project, componentsByRefdes } from '$lib/stores/project';
-  import { layerVisibility, layers } from '$lib/stores/layers';
+  import { layerVisibility, layers, activeLayer } from '$lib/stores/layers';
+  import { settings } from '$lib/stores/settings';
   import { selection, selectComponent, clearSelection } from '$lib/stores/selection';
   import { buildPcbScene, type PcbScene } from '$lib/pcb/scene';
   import { drawPcb, type Viewport } from '$lib/pcb/render';
@@ -39,7 +40,17 @@
       const fp = comp ? scene.footprints.find((f) => f.refdes === comp.refdes) : undefined;
       selFpUuid = fp?.uuid ?? null;
     }
-    drawPcb(ctx, scene, $layers, $layerVisibility, viewport, selFpUuid, highlightedNet);
+    drawPcb(
+      ctx,
+      scene,
+      $layers,
+      $layerVisibility,
+      viewport,
+      $activeLayer,
+      $settings.inactiveLayerOpacity,
+      selFpUuid,
+      highlightedNet
+    );
   }
 
   function resizeCanvas() {

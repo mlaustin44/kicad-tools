@@ -7,6 +7,7 @@ import type { Project } from '$lib/model/project';
 function fakeProject(layerIds: string[]): Project {
   return {
     name: 'fake',
+    source: 'raw',
     sheets: [],
     components: [],
     nets: [],
@@ -24,7 +25,7 @@ function fakeProject(layerIds: string[]): Project {
       graphics: [],
       boundsMm: { x: 0, y: 0, w: 1, h: 1 }
     }
-  } as Project;
+  } as unknown as Project;
 }
 
 describe('activeLayer store', () => {

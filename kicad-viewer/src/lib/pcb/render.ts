@@ -1,5 +1,7 @@
 import type { PcbScene } from './scene';
 import type { LayerInfo, GraphicGeom, Pad, Point, TrackSeg, FootprintGeom } from '$lib/model/project';
+import { computeDrawOrder } from './draw-order';
+import { classifyLayer } from './layer-side';
 
 export interface Viewport {
   x: number;
@@ -13,6 +15,8 @@ export function drawPcb(
   layers: LayerInfo[],
   visible: Map<string, boolean>,
   viewport: Viewport,
+  activeLayer: string,
+  inactiveOpacity: number,
   selectedFootprint?: string | null,
   highlightedNet?: string | null
 ): void {
@@ -27,27 +31,17 @@ export function drawPcb(
 
   drawGrid(ctx, scene, viewport);
 
-  // Draw order: back-to-front — back layers first, inner, then front layers on top.
-  // Edge cuts are drawn on top so the outline always reads.
-  const backLayerIds = ['B.Cu', 'B.SilkS', 'B.Mask', 'B.Fab', 'B.CrtYd', 'B.Paste'];
-  const inLayerIds = layers.filter((l) => l.type === 'In.Cu').map((l) => l.id);
-  const frontLayerIds = ['F.Cu', 'F.SilkS', 'F.Mask', 'F.Fab', 'F.CrtYd', 'F.Paste'];
-
-  const drawByIds = (ids: string[]) => {
-    for (const id of ids) {
-      const l = layers.find((x) => x.id === id);
-      if (!l || !visible.get(l.id)) continue;
-      drawLayer(ctx, scene, l);
-    }
-  };
-
-  drawByIds(backLayerIds);
-  drawByIds(inLayerIds);
-  drawByIds(frontLayerIds);
-
-  // Edge cuts on top (outline always visible)
-  const edge = layers.find((l) => l.id === 'Edge.Cuts');
-  if (edge && visible.get(edge.id)) drawLayer(ctx, scene, edge);
+  // Bottom-to-top draw order computed from the active layer's side. Layers on
+  // the opposite side of the active copper render first and dimmed.
+  const activeSideRaw = classifyLayer(activeLayer, layers);
+  const activeSide: 'front' | 'back' = activeSideRaw === 'back' ? 'back' : 'front';
+  const ordered = computeDrawOrder(layers, activeLayer);
+  for (const l of ordered) {
+    if (!visible.get(l.id)) continue;
+    const side = classifyLayer(l.id, layers);
+    const isActive = side === 'board' || side === activeSide;
+    drawLayer(ctx, scene, l, isActive ? 1.0 : inactiveOpacity);
+  }
 
   // Drill holes — punch through copper on through-hole pads and vias so they
   // visually read as holes instead of solid copper dots.
@@ -609,16 +603,23 @@ function drawDrillHoles(ctx: CanvasRenderingContext2D, scene: PcbScene): void {
   }
 }
 
-function drawLayer(ctx: CanvasRenderingContext2D, scene: PcbScene, layer: LayerInfo): void {
+function drawLayer(
+  ctx: CanvasRenderingContext2D,
+  scene: PcbScene,
+  layer: LayerInfo,
+  baseOpacity: number = 1.0
+): void {
   const buckets = scene.byLayer.get(layer.id);
   if (!buckets) return;
+  const prevAlpha = ctx.globalAlpha;
+  ctx.globalAlpha = baseOpacity;
   ctx.strokeStyle = layer.defaultColor;
   ctx.fillStyle = layer.defaultColor;
 
   // Zones (filled polygons, semi-transparent)
   for (const z of buckets.zones) {
     if (z.polygon.length < 2) continue;
-    ctx.globalAlpha = 0.5;
+    ctx.globalAlpha = baseOpacity * 0.5;
     ctx.beginPath();
     const p0 = z.polygon[0]!;
     ctx.moveTo(p0.x, p0.y);
@@ -628,7 +629,7 @@ function drawLayer(ctx: CanvasRenderingContext2D, scene: PcbScene, layer: LayerI
     }
     ctx.closePath();
     ctx.fill();
-    ctx.globalAlpha = 1;
+    ctx.globalAlpha = baseOpacity;
   }
 
   // Pads (before tracks so tracks land on top where they overlap)
@@ -671,6 +672,8 @@ function drawLayer(ctx: CanvasRenderingContext2D, scene: PcbScene, layer: LayerI
   for (const bg of buckets.boardGraphics) {
     drawGraphic(ctx, bg.geom, { x: 0, y: 0 }, 0, 'top');
   }
+
+  ctx.globalAlpha = prevAlpha;
 }
 
 function drawPadShape(ctx: CanvasRenderingContext2D, pad: Pad): void {
