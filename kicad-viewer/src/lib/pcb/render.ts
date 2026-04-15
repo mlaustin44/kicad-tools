@@ -129,13 +129,50 @@ export function drawPcb(
 
 // ---------- copper labels (net names on tracks, pads, zones; pad numbers) ----------
 
-// Screen-relative sizing: labels target a constant on-screen pixel height, so
-// they're legible at any zoom level above the minimum.
+// Screen-relative label sizing: the numbers are in CSS px, converted to world
+// mm via the current zoom.
 const TRACK_LABEL_PX = 10;
 const PAD_NUM_PX = 11;
 const PAD_NET_PX = 9;
 const ZONE_LABEL_PX = 14;
-const MIN_ZOOM_FOR_LABELS = 1.5; // pxPerMm — below this, labels would just clutter.
+// Tracks and pad net labels are only useful when you're zoomed in enough to
+// read them without covering everything else. Zone labels stay visible a bit
+// earlier because the polygons they sit on are themselves big.
+const MIN_ZOOM_FOR_TRACK_LABELS = 4;
+const MIN_ZOOM_FOR_PAD_NET = 6;
+const MIN_ZOOM_FOR_ZONE_LABELS = 1.5;
+
+// Axis-aligned bounding box for a rendered label, in world (mm) coordinates.
+// We use these to prevent labels from piling up on top of each other in dense
+// routing — once a label is placed, any overlapping candidate is skipped.
+interface LabelBox {
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+}
+
+function bboxesOverlap(a: LabelBox, b: LabelBox): boolean {
+  return a.x0 < b.x1 && a.x1 > b.x0 && a.y0 < b.y1 && a.y1 > b.y0;
+}
+
+function rotatedLabelBox(
+  cx: number,
+  cy: number,
+  widthMm: number,
+  heightMm: number,
+  angleRad: number
+): LabelBox {
+  // AABB of the rotated text rectangle. Slightly conservative, which is fine:
+  // we're using this as an anti-clutter filter, not a precise layout system.
+  const hw = widthMm / 2;
+  const hh = heightMm / 2;
+  const cos = Math.abs(Math.cos(angleRad));
+  const sin = Math.abs(Math.sin(angleRad));
+  const halfW = hw * cos + hh * sin;
+  const halfH = hw * sin + hh * cos;
+  return { x0: cx - halfW, y0: cy - halfH, x1: cx + halfW, y1: cy + halfH };
+}
 
 function drawCopperLabels(
   ctx: CanvasRenderingContext2D,
@@ -144,7 +181,7 @@ function drawCopperLabels(
   visible: Map<string, boolean>,
   pxPerMm: number
 ): void {
-  if (pxPerMm < MIN_ZOOM_FOR_LABELS) return;
+  if (pxPerMm < MIN_ZOOM_FOR_ZONE_LABELS) return;
 
   const copperIds: string[] = [
     'F.Cu',
@@ -152,36 +189,65 @@ function drawCopperLabels(
     'B.Cu'
   ];
   const seenPads = new Set<Pad>();
-  const seenTrackLabels = new Set<string>();
+  const placed: LabelBox[] = [];
 
+  // Zones first: they cover large areas, and any track/pad label that lands
+  // on top of a zone label just becomes unreadable. One label per
+  // (layer, net) at the largest polygon's centroid.
   for (const id of copperIds) {
     const l = layers.find((x) => x.id === id);
     if (!l || !visible.get(l.id)) continue;
     const buckets = scene.byLayer.get(l.id);
     if (!buckets) continue;
 
+    const zoneByNet = new Map<string, { polygon: Point[]; area: number }>();
     for (const z of buckets.zones) {
       if (!z.netName || z.polygon.length < 3) continue;
-      drawZoneLabel(ctx, z.polygon, z.netName, pxPerMm);
+      const area = Math.abs(polygonSignedArea(z.polygon));
+      const prev = zoneByNet.get(z.netName);
+      if (!prev || area > prev.area) zoneByNet.set(z.netName, { polygon: z.polygon, area });
     }
+    for (const [netName, info] of zoneByNet) {
+      drawZoneLabel(ctx, info.polygon, netName, pxPerMm, placed);
+    }
+  }
 
+  // Pads: numbers always (subject to readable size); net names only at higher
+  // zoom so they don't clutter far-out views.
+  const showPadNets = pxPerMm >= MIN_ZOOM_FOR_PAD_NET;
+  for (const id of copperIds) {
+    const l = layers.find((x) => x.id === id);
+    if (!l || !visible.get(l.id)) continue;
+    const buckets = scene.byLayer.get(l.id);
+    if (!buckets) continue;
     for (const { fp, pad } of buckets.pads) {
       if (seenPads.has(pad)) continue;
       seenPads.add(pad);
-      drawPadLabel(ctx, fp, pad, pxPerMm);
+      drawPadLabel(ctx, fp, pad, pxPerMm, showPadNets, placed);
     }
+  }
 
-    for (const t of buckets.tracks) {
-      if (!t.netName) continue;
-      const key = `${t.a.x},${t.a.y}|${t.b.x},${t.b.y}|${t.netName}`;
-      if (seenTrackLabels.has(key)) continue;
-      seenTrackLabels.add(key);
-      drawTrackLabel(ctx, t, pxPerMm);
+  // Tracks last: skipped entirely at low zoom, collision-filtered at high zoom.
+  if (pxPerMm >= MIN_ZOOM_FOR_TRACK_LABELS) {
+    for (const id of copperIds) {
+      const l = layers.find((x) => x.id === id);
+      if (!l || !visible.get(l.id)) continue;
+      const buckets = scene.byLayer.get(l.id);
+      if (!buckets) continue;
+      for (const t of buckets.tracks) {
+        if (!t.netName) continue;
+        drawTrackLabel(ctx, t, pxPerMm, placed);
+      }
     }
   }
 }
 
-function drawTrackLabel(ctx: CanvasRenderingContext2D, t: TrackSeg, pxPerMm: number): void {
+function drawTrackLabel(
+  ctx: CanvasRenderingContext2D,
+  t: TrackSeg,
+  pxPerMm: number,
+  placed: LabelBox[]
+): void {
   if (!t.netName) return;
   const dx = t.b.x - t.a.x;
   const dy = t.b.y - t.a.y;
@@ -190,15 +256,19 @@ function drawTrackLabel(ctx: CanvasRenderingContext2D, t: TrackSeg, pxPerMm: num
 
   const heightMm = TRACK_LABEL_PX / pxPerMm;
   const approxWidthMm = t.netName.length * heightMm * 0.55;
-  // Need the segment to be at least as long as the label, with a tiny margin.
-  if (approxWidthMm > lengthMm * 0.9) return;
+  // Need the segment to fit the label with a margin on each side; keeps
+  // labels off short stubs between vias.
+  if (approxWidthMm > lengthMm * 0.85) return;
 
   const mx = (t.a.x + t.b.x) / 2;
   const my = (t.a.y + t.b.y) / 2;
   let angle = Math.atan2(dy, dx);
-  // Never-upside-down: fold into [-π/2, π/2] so text reads left-to-right.
   if (angle > Math.PI / 2) angle -= Math.PI;
   else if (angle < -Math.PI / 2) angle += Math.PI;
+
+  const box = rotatedLabelBox(mx, my, approxWidthMm, heightMm * 1.2, angle);
+  if (placed.some((p) => bboxesOverlap(p, box))) return;
+  placed.push(box);
 
   ctx.save();
   ctx.translate(mx, my);
@@ -209,7 +279,6 @@ function drawTrackLabel(ctx: CanvasRenderingContext2D, t: TrackSeg, pxPerMm: num
   ctx.fillStyle = 'rgba(255,255,255,0.95)';
   ctx.strokeStyle = 'rgba(0,0,0,0.55)';
   ctx.lineWidth = heightMm * 0.25;
-  // Outline first, then fill — makes labels legible over any copper color.
   ctx.strokeText(t.netName, 0, 0);
   ctx.fillText(t.netName, 0, 0);
   ctx.restore();
@@ -219,22 +288,37 @@ function drawPadLabel(
   ctx: CanvasRenderingContext2D,
   fp: FootprintGeom,
   pad: Pad,
-  pxPerMm: number
+  pxPerMm: number,
+  showNet: boolean,
+  placed: LabelBox[]
 ): void {
   const { sizeMm: sz } = pad;
   if (sz.w <= 0 || sz.h <= 0) return;
 
   const numH = PAD_NUM_PX / pxPerMm;
-  const netH = PAD_NET_PX / pxPerMm;
-
-  // If the pad is so small the number alone overflows it, skip altogether.
   const minDim = Math.min(sz.w, sz.h);
   if (numH > minDim * 1.3) return;
 
-  // Cumulative world rotation after the footprint transform chain.
+  // Compute the pad's world-frame center for collision bookkeeping.
+  const fpCos = Math.cos((fp.rotationDeg * Math.PI) / 180);
+  const fpSin = Math.sin((fp.rotationDeg * Math.PI) / 180);
+  const mirror = fp.side === 'bottom' ? -1 : 1;
+  const localX = pad.positionMm.x * mirror;
+  const worldCx = fp.position.x + fpCos * localX - fpSin * pad.positionMm.y;
+  const worldCy = fp.position.y + fpSin * localX + fpCos * pad.positionMm.y;
+
   const worldDeg = fp.side === 'bottom' ? -fp.rotationDeg : fp.rotationDeg;
   const norm = ((worldDeg % 360) + 360) % 360;
   const flip = norm > 90 && norm < 270;
+
+  // Track the number's bbox so tracks can't stomp it. Uses pad extents as a
+  // safe upper bound for how much screen real-estate the number occupies.
+  placed.push({
+    x0: worldCx - sz.w / 2,
+    y0: worldCy - sz.h / 2,
+    x1: worldCx + sz.w / 2,
+    y1: worldCy + sz.h / 2
+  });
 
   ctx.save();
   ctx.translate(fp.position.x, fp.position.y);
@@ -248,13 +332,13 @@ function drawPadLabel(
   ctx.fillStyle = 'rgba(255,255,255,0.95)';
   ctx.strokeStyle = 'rgba(0,0,0,0.5)';
 
-  if (pad.netName) {
-    // Number above, net below. Outline helps readability over copper fill.
+  if (showNet && pad.netName) {
     ctx.font = `600 ${numH}px ui-sans-serif, system-ui, sans-serif`;
     ctx.lineWidth = numH * 0.18;
     ctx.strokeText(pad.number, 0, -numH * 0.6);
     ctx.fillText(pad.number, 0, -numH * 0.6);
 
+    const netH = PAD_NET_PX / pxPerMm;
     ctx.font = `${netH}px ui-sans-serif, system-ui, sans-serif`;
     ctx.lineWidth = netH * 0.22;
     ctx.strokeText(pad.netName, 0, netH * 0.7);
@@ -273,12 +357,16 @@ function drawZoneLabel(
   ctx: CanvasRenderingContext2D,
   poly: Point[],
   netName: string,
-  pxPerMm: number
+  pxPerMm: number,
+  placed: LabelBox[]
 ): void {
   const c = polygonCentroid(poly);
   if (!c) return;
-
   const heightMm = ZONE_LABEL_PX / pxPerMm;
+  const approxWidthMm = netName.length * heightMm * 0.55;
+  const box = rotatedLabelBox(c.x, c.y, approxWidthMm, heightMm * 1.2, 0);
+  if (placed.some((p) => bboxesOverlap(p, box))) return;
+  placed.push(box);
 
   ctx.save();
   ctx.font = `${heightMm}px ui-sans-serif, system-ui, sans-serif`;
@@ -290,6 +378,16 @@ function drawZoneLabel(
   ctx.strokeText(netName, c.x, c.y);
   ctx.fillText(netName, c.x, c.y);
   ctx.restore();
+}
+
+function polygonSignedArea(poly: Point[]): number {
+  let a = 0;
+  for (let i = 0; i < poly.length; i++) {
+    const p0 = poly[i]!;
+    const p1 = poly[(i + 1) % poly.length]!;
+    a += p0.x * p1.y - p1.x * p0.y;
+  }
+  return a / 2;
 }
 
 function polygonCentroid(poly: Point[]): Point | null {
