@@ -12,3 +12,7 @@ kicad-release/templates/*/
 
 # Local overrides of example configs
 kicad-release/example/*.local.toml
+.superpowers/
+
+# Local reference clones (kicanvas, InteractiveHtmlBom, etc.)
+references/
