@@ -102,13 +102,14 @@ export function drawPcb(
   }
 
   // Labels — only at sufficient zoom
-  const REFDES_PX_PER_MM = 1.2;
   const pxPerMm = viewport.scale;
 
-  if (pxPerMm > REFDES_PX_PER_MM) {
+  // Refdes: target ~12 CSS px on screen through mid zoom, capped at 1.5mm
+  // world so it doesn't explode at extreme zoom-in.
+  const refdesHeightMm = Math.min(1.5, 12 / pxPerMm);
+  if (refdesHeightMm * pxPerMm >= 7) {
     ctx.save();
     ctx.fillStyle = '#c8c8c8';
-    const refdesHeightMm = Math.max(0.8, (1.4 / pxPerMm) * 10);
     ctx.font = `${refdesHeightMm}px ui-sans-serif, system-ui, sans-serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
@@ -136,16 +137,18 @@ export function drawPcb(
 // zoom-in once the world floor kicks in, and hides them at zoom-out once the
 // MAX_WORLD clamp pushes the on-screen height below MIN_READABLE_PX.
 const MIN_READABLE_PX = 6;
-const TRACK_TARGET_PX = 10;
-const TRACK_MIN_WORLD_MM = 0.4;
-const TRACK_MAX_WORLD_MM = 1.5;
-// Pads are sized from their own dimensions so the label always fits, with a
-// world-size floor so tiny pads at high zoom still read legibly and a cap so
-// big thermal/connector pads don't get absurdly large labels.
+// Track labels stay ~9 CSS px on screen at normal zoom; no world-space floor,
+// so at high zoom the label stays compact (leaving more segments long enough
+// to host it). Capped so the label doesn't grow absurd at very low zoom.
+const TRACK_TARGET_PX = 9;
+const TRACK_MAX_WORLD_MM = 1.2;
+// Pads: fraction of the pad's short dimension for sane defaults, with a small
+// world-size floor for readability at extreme zoom-in and a tight cap so big
+// thermal/connector pads don't get huge text.
 const PAD_NUM_FRACTION = 0.3;
 const PAD_NET_FRACTION = 0.22;
 const PAD_NUM_MIN_WORLD_MM = 0.4;
-const PAD_NUM_MAX_WORLD_MM = 1.2;
+const PAD_NUM_MAX_WORLD_MM = 0.8;
 // Net names get rendered as pad subtitles only when the pad is big enough to
 // warrant it — connectors, thermal pads, large SMD. Small IC pins would just
 // paint the same name over every pin, which is redundant with track labels.
@@ -265,13 +268,10 @@ function drawTrackLabel(
   const lengthMm = Math.hypot(dx, dy);
   if (lengthMm <= 0) return;
 
-  // Clamped screen-relative sizing: target ~TRACK_TARGET_PX on screen while the
-  // world-space height stays inside [MIN, MAX]. Tying to track width directly
-  // misses too many labels because most signal traces are 0.2mm.
-  const heightMm = Math.min(
-    TRACK_MAX_WORLD_MM,
-    Math.max(TRACK_MIN_WORLD_MM, TRACK_TARGET_PX / pxPerMm)
-  );
+  // Screen-relative: target ~TRACK_TARGET_PX on screen, capped so the label
+  // can't become absurd at very low zoom. No world-space floor — at high zoom
+  // we want the label compact enough to fit on short segments.
+  const heightMm = Math.min(TRACK_MAX_WORLD_MM, TRACK_TARGET_PX / pxPerMm);
   if (heightMm * pxPerMm < MIN_READABLE_PX) return;
   const approxWidthMm = t.netName.length * heightMm * 0.55;
   if (approxWidthMm > lengthMm * 0.85) return;
