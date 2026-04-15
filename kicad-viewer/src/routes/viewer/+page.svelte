@@ -8,6 +8,7 @@
   import Inspector from '$lib/ui/Inspector.svelte';
   import SchematicView from '$lib/views/SchematicView.svelte';
   import SheetTree from '$lib/ui/SheetTree.svelte';
+  import SearchBar from '$lib/ui/SearchBar.svelte';
   import { project } from '$lib/stores/project';
 
   let tab = $state('sch');
@@ -64,6 +65,8 @@
 {:else}
   <main class="empty"><DropZone /></main>
 {/if}
+
+<SearchBar open={searchOpen} onClose={() => (searchOpen = false)} />
 
 <Toast />
 
