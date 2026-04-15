@@ -1,5 +1,5 @@
 import type { PcbScene } from './scene';
-import type { LayerInfo, GraphicGeom } from '$lib/model/project';
+import type { LayerInfo, GraphicGeom, Pad } from '$lib/model/project';
 
 export interface Viewport {
   x: number;
@@ -59,6 +59,7 @@ export function drawPcb(
 
   if (highlightedNet) {
     ctx.strokeStyle = '#ffd54a';
+    const seenPads = new Set<Pad>();
     // Walk all tracks (across layers/buckets) whose netName matches
     for (const [, buckets] of scene.byLayer) {
       for (const t of buckets.tracks) {
@@ -75,6 +76,21 @@ export function drawPcb(
         ctx.beginPath();
         ctx.arc(v.position.x, v.position.y, v.diameterMm / 2 + 0.05, 0, Math.PI * 2);
         ctx.stroke();
+      }
+      // Pads on the net (dedupe — through-hole pads appear in multiple layer buckets)
+      for (const { fp, pad } of buckets.pads) {
+        if (pad.netName !== highlightedNet) continue;
+        if (seenPads.has(pad)) continue;
+        seenPads.add(pad);
+        ctx.save();
+        ctx.translate(fp.position.x, fp.position.y);
+        if (fp.side === 'bottom') ctx.scale(-1, 1);
+        ctx.rotate((fp.rotationDeg * Math.PI) / 180);
+        ctx.fillStyle = '#ffd54a';
+        ctx.globalAlpha = 0.6;
+        drawPadShape(ctx, pad);
+        ctx.globalAlpha = 1;
+        ctx.restore();
       }
     }
   }
@@ -147,6 +163,16 @@ function drawLayer(ctx: CanvasRenderingContext2D, scene: PcbScene, layer: LayerI
     ctx.globalAlpha = 1;
   }
 
+  // Pads (before tracks so tracks land on top where they overlap)
+  for (const { fp, pad } of buckets.pads) {
+    ctx.save();
+    ctx.translate(fp.position.x, fp.position.y);
+    if (fp.side === 'bottom') ctx.scale(-1, 1);
+    ctx.rotate((fp.rotationDeg * Math.PI) / 180);
+    drawPadShape(ctx, pad);
+    ctx.restore();
+  }
+
   // Tracks
   for (const t of buckets.tracks) {
     if (t.widthMm <= 0) continue;
@@ -165,13 +191,55 @@ function drawLayer(ctx: CanvasRenderingContext2D, scene: PcbScene, layer: LayerI
     ctx.fill();
   }
 
-  // Footprint graphics (silk/fab/courtyard lines, polygons, arcs)
+  // Footprint graphics (silk/fab/courtyard lines, polygons, arcs, text)
   for (const g of buckets.graphics) {
     const fp = g.from;
     const graphic = fp.graphics[g.idx];
     if (!graphic) continue;
     drawGraphic(ctx, graphic.geom, fp.position, fp.rotationDeg, fp.side);
   }
+
+  // Board-level graphics (edge cuts, free drawings) — no per-footprint transform.
+  for (const bg of buckets.boardGraphics) {
+    drawGraphic(ctx, bg.geom, { x: 0, y: 0 }, 0, 'top');
+  }
+}
+
+function drawPadShape(ctx: CanvasRenderingContext2D, pad: Pad): void {
+  const { positionMm: pos, sizeMm: sz, shape } = pad;
+  if (sz.w <= 0 || sz.h <= 0) return;
+  ctx.beginPath();
+  if (shape === 'circle' || (shape === 'oval' && sz.w === sz.h)) {
+    ctx.arc(pos.x, pos.y, sz.w / 2, 0, Math.PI * 2);
+  } else if (shape === 'oval') {
+    ctx.ellipse(pos.x, pos.y, sz.w / 2, sz.h / 2, 0, 0, Math.PI * 2);
+  } else if (shape === 'roundrect') {
+    const r = Math.min(0.2, Math.min(sz.w, sz.h) / 4);
+    roundRect(ctx, pos.x - sz.w / 2, pos.y - sz.h / 2, sz.w, sz.h, r);
+  } else {
+    // rect, trapezoid, custom — fall back to rect
+    ctx.rect(pos.x - sz.w / 2, pos.y - sz.h / 2, sz.w, sz.h);
+  }
+  ctx.fill();
+}
+
+function roundRect(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  r: number
+): void {
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
 }
 
 function drawGraphic(
@@ -221,7 +289,20 @@ function drawGraphic(
     );
     ctx.stroke();
   } else if (s.kind === 'text') {
-    // Deferred to Task 28.
+    ctx.save();
+    ctx.translate(s.position.x, s.position.y);
+    ctx.rotate((s.rotationDeg * Math.PI) / 180);
+    // For bottom-side footprints, the outer transform mirrored the canvas X axis
+    // to flip silk/fab geometry. For text we want it to read top-view correctly,
+    // so counter-mirror here.
+    if (side === 'bottom') ctx.scale(-1, 1);
+    const heightPx = Math.max(0.8, s.heightMm);
+    ctx.fillStyle = ctx.strokeStyle;
+    ctx.font = `${heightPx}px ui-sans-serif, system-ui, sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(s.text, 0, 0);
+    ctx.restore();
   }
 
   ctx.restore();
