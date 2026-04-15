@@ -17,3 +17,7 @@ npm run build
 ```
 
 Static output lands in `build/`. Deployable to Cloudflare Pages or any static host.
+
+## Deploying
+
+See `DEPLOY.md`.
