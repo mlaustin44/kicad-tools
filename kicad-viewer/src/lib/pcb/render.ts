@@ -129,17 +129,22 @@ export function drawPcb(
 
 // ---------- copper labels (net names on tracks, pads, zones; pad numbers) ----------
 
-// Feature-relative label sizing: each label is sized as a fraction of the
-// feature it sits on (track width, pad size, zone extent) and clamped so it's
-// not absurdly big or too small to read. The readability gate (MIN_READABLE_PX)
-// is what naturally hides labels when the board is zoomed out — at low zoom,
-// feature-proportional text is sub-pixel and we skip it; at high zoom the
-// label grows alongside the feature it's describing.
-const MIN_READABLE_PX = 7;
-const TRACK_LABEL_FRACTION = 0.75; // fraction of track width
-const TRACK_LABEL_MAX_MM = 1.5;
-const PAD_NUM_FRACTION = 0.45; // fraction of pad min dimension
+// Label sizing: a hybrid of screen-relative and world-space clamps.
+//   heightMm = clamp(TARGET_PX / pxPerMm, MIN_WORLD_MM, MAX_WORLD_MM)
+// This keeps labels at roughly a fixed screen size through the mid-zoom range
+// (where TARGET_PX / pxPerMm lands inside the clamp window), grows them with
+// zoom-in once the world floor kicks in, and hides them at zoom-out once the
+// MAX_WORLD clamp pushes the on-screen height below MIN_READABLE_PX.
+const MIN_READABLE_PX = 6;
+const TRACK_TARGET_PX = 10;
+const TRACK_MIN_WORLD_MM = 0.4;
+const TRACK_MAX_WORLD_MM = 1.5;
+// Pads are sized from their own dimensions (so the label always fits), but
+// with a world-size floor so tiny pads can still be labeled legibly at high
+// zoom instead of the text shrinking to a sub-millimeter speck.
+const PAD_NUM_FRACTION = 0.45;
 const PAD_NET_FRACTION = 0.32;
+const PAD_NUM_MIN_WORLD_MM = 0.4;
 const ZONE_LABEL_FRACTION = 0.05; // fraction of zone bbox min dim
 const ZONE_LABEL_MIN_MM = 1.2;
 const ZONE_LABEL_MAX_MM = 6;
@@ -254,10 +259,13 @@ function drawTrackLabel(
   const lengthMm = Math.hypot(dx, dy);
   if (lengthMm <= 0) return;
 
-  // Feature-relative: size to the track width so the label reads as "belonging
-  // to" that trace. Skip if the label would be smaller than MIN_READABLE_PX
-  // on screen — this is the natural zoom gate.
-  const heightMm = Math.min(t.widthMm * TRACK_LABEL_FRACTION, TRACK_LABEL_MAX_MM);
+  // Clamped screen-relative sizing: target ~TRACK_TARGET_PX on screen while the
+  // world-space height stays inside [MIN, MAX]. Tying to track width directly
+  // misses too many labels because most signal traces are 0.2mm.
+  const heightMm = Math.min(
+    TRACK_MAX_WORLD_MM,
+    Math.max(TRACK_MIN_WORLD_MM, TRACK_TARGET_PX / pxPerMm)
+  );
   if (heightMm * pxPerMm < MIN_READABLE_PX) return;
   const approxWidthMm = t.netName.length * heightMm * 0.55;
   if (approxWidthMm > lengthMm * 0.85) return;
@@ -310,18 +318,16 @@ function drawPadLabel(
   const { sizeMm: sz } = pad;
   if (sz.w <= 0 || sz.h <= 0) return;
 
-  // Feature-relative: pad number sized from the pad's smaller dimension so it
-  // always fits. Readability gate: if the pad is smaller than ~15px on screen,
-  // don't draw anything.
+  // Feature-relative with a world-space floor. On a small pad, the floor
+  // pushes the label outside the pad boundary, but that's better than
+  // rendering an unreadable speck.
   const minDim = Math.min(sz.w, sz.h);
-  const numH = minDim * PAD_NUM_FRACTION;
+  const numH = Math.max(minDim * PAD_NUM_FRACTION, PAD_NUM_MIN_WORLD_MM);
   if (numH * pxPerMm < MIN_READABLE_PX) return;
-  // Show the net name only when the pad is big enough on screen that two lines
-  // of text fit comfortably — otherwise the number alone stays legible.
-  const netH = minDim * PAD_NET_FRACTION;
+  const netH = Math.max(minDim * PAD_NET_FRACTION, PAD_NUM_MIN_WORLD_MM * 0.8);
   const showNet = pad.netName !== null && pad.netName !== undefined
     && netH * pxPerMm >= MIN_READABLE_PX
-    && pad.netName.length * netH * 0.55 <= Math.max(sz.w, sz.h) * 1.1;
+    && pad.netName.length * netH * 0.55 <= Math.max(sz.w, sz.h) * 1.4;
 
   // Compute the pad's world-frame center for collision bookkeeping.
   const fpCos = Math.cos((fp.rotationDeg * Math.PI) / 180);
