@@ -27,7 +27,7 @@ export interface AdapterInput {
 
 export function toProject(input: AdapterInput): Project {
   const parsedSchematics = parseSchematics(input.schematics);
-  const sheets = buildSheets(parsedSchematics, input.rootSchematic);
+  const sheets = buildSheets(parsedSchematics, input.rootSchematic, input.schematics);
   const components = buildComponents(parsedSchematics, sheets, input.rootSchematic);
 
   const pcb = new KicadPCB('pcb', input.pcb);
@@ -60,33 +60,43 @@ function parseSchematics(src: Record<string, string>): Map<string, KicadSch> {
   return out;
 }
 
-function buildSheets(parsed: Map<string, KicadSch>, root: string): Sheet[] {
+function buildSheets(
+  parsed: Map<string, KicadSch>,
+  root: string,
+  sources: Record<string, string>
+): Sheet[] {
   const sheets: Sheet[] = [];
   const rootSch = parsed.get(root);
 
   const rootUuid = rootSch?.uuid ?? root;
   const rootName = root.replace(/\.kicad_sch$/, '');
-  sheets.push({
+  const rootSheet: Sheet = {
     uuid: rootUuid,
     name: rootName,
     path: ['root'],
     parent: null,
     componentUuids: [],
     boundsMm: paperBounds(rootSch)
-  });
+  };
+  const rootText = sources[root];
+  if (rootText) rootSheet.rawSch = rootText;
+  sheets.push(rootSheet);
 
   // One level of children: any other schematic in the bundle, placed under root.
   for (const [filename, sch] of parsed.entries()) {
     if (filename === root) continue;
     const name = filename.replace(/\.kicad_sch$/, '');
-    sheets.push({
+    const childSheet: Sheet = {
       uuid: sch.uuid ?? filename,
       name,
       path: ['root', name],
       parent: rootUuid,
       componentUuids: [],
       boundsMm: paperBounds(sch)
-    });
+    };
+    const childText = sources[filename];
+    if (childText) childSheet.rawSch = childText;
+    sheets.push(childSheet);
   }
   return sheets;
 }

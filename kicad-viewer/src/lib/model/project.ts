@@ -17,6 +17,7 @@ export interface Sheet {
   parent: Uuid | null;
   componentUuids: Uuid[];
   boundsMm: Rect;
+  rawSch?: string | undefined;        // original S-expression source for deferred render parsing
 }
 
 export interface Component {
