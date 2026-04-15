@@ -18,7 +18,11 @@
       const pro = blob.kicadPro ? (blob.files[blob.kicadPro] as string) : '{}';
       const pcb = blob.files[blob.kicadPcb] as string;
       const p = toProject({ pro, pcb, schematics, rootSchematic: root });
-      if (blob.glb) {
+      if (blob.step) {
+        // Prefer STEP when both are present — tessellated client-side from CAD-grade geometry.
+        const u8 = blob.files[blob.step] as Uint8Array;
+        p.stepUrl = URL.createObjectURL(new Blob([u8 as BlobPart], { type: 'model/step' }));
+      } else if (blob.glb) {
         const u8 = blob.files[blob.glb] as Uint8Array;
         p.glbUrl = URL.createObjectURL(new Blob([u8 as BlobPart], { type: 'model/gltf-binary' }));
       }

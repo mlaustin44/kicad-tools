@@ -7,6 +7,7 @@ export interface Project {
   nets: Net[];
   pcb: PcbData;
   glbUrl?: string | undefined;        // if supplied in bundle or sidecar
+  stepUrl?: string | undefined;       // KiCad STEP export (tessellated client-side via occt-import-js)
   source: 'raw' | 'bundle';
 }
 

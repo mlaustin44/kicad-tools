@@ -2,10 +2,12 @@
   import { onMount, untrack } from 'svelte';
   import * as THREE from 'three';
   import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-  import { project, setProjectGlbUrl } from '$lib/stores/project';
+  import { project, setProjectGlbUrl, setProjectStepUrl } from '$lib/stores/project';
   import { selection, selectComponent, clearSelection } from '$lib/stores/selection';
   import { theme } from '$lib/stores/theme';
   import { loadGlb, indexByRefdes } from '$lib/three/loader';
+  import { loadStep } from '$lib/three/step-loader';
+  import { computeComponentFrame } from '$lib/three/camera-framing';
   import { pushToast } from '$lib/stores/toasts';
 
   type PresetView = 'top' | 'bottom' | 'iso';
@@ -20,8 +22,11 @@
   let canvas: HTMLCanvasElement | undefined = $state();
 
   let refdesToMesh: Map<string, THREE.Object3D> = new Map();
-  let currentGlbUrl: string | null = null;
-  let currentGlbGroup: THREE.Group | null = null;
+  // Tracks whichever model is currently on screen (GLB or STEP). Keeping it
+  // uniform lets cross-probe / click-hit / framing stay format-agnostic.
+  let currentModelUrl: string | null = null;
+  let currentModelGroup: THREE.Group | null = null;
+  let loading = $state(false);
 
   let scene: THREE.Scene | null = null;
   let camera: THREE.PerspectiveCamera | null = null;
@@ -30,8 +35,8 @@
   const raycaster = new THREE.Raycaster();
 
   function goToPreset(preset: PresetView): void {
-    if (!currentGlbGroup || !camera || !controls) return;
-    const box = new THREE.Box3().setFromObject(currentGlbGroup);
+    if (!currentModelGroup || !camera || !controls) return;
+    const box = new THREE.Box3().setFromObject(currentModelGroup);
     if (box.isEmpty()) return;
     const center = box.getCenter(new THREE.Vector3());
     const size = box.getSize(new THREE.Vector3());
@@ -49,9 +54,9 @@
     controls.update();
   }
 
-  function frameToGlb(): void {
-    if (!currentGlbGroup || !camera || !controls) return;
-    const box = new THREE.Box3().setFromObject(currentGlbGroup);
+  function frameWhole(): void {
+    if (!currentModelGroup || !camera || !controls) return;
+    const box = new THREE.Box3().setFromObject(currentModelGroup);
     if (box.isEmpty()) return;
     const center = box.getCenter(new THREE.Vector3());
     const size = box.getSize(new THREE.Vector3());
@@ -130,50 +135,64 @@
     if (scene) scene.background = new THREE.Color(readRenderBgColor());
   });
 
-  // Load / swap GLB when the project's glbUrl changes
+  function disposeCurrentModel(): void {
+    if (!currentModelGroup || !scene) return;
+    scene.remove(currentModelGroup);
+    currentModelGroup.traverse((o) => {
+      const mesh = o as THREE.Mesh;
+      if (mesh.geometry) mesh.geometry.dispose();
+      const mat = mesh.material;
+      if (Array.isArray(mat)) mat.forEach((m) => m.dispose());
+      else if (mat) mat.dispose();
+    });
+    currentModelGroup = null;
+    refdesToMesh = new Map();
+  }
+
+  // Load / swap 3D model when the project's stepUrl or glbUrl changes. STEP
+  // takes precedence when both are present (higher-fidelity CAD geometry).
   $effect(() => {
     if (!scene) return;
-    const url = $project?.glbUrl ?? null;
-    if (url === currentGlbUrl) return;
-    currentGlbUrl = url;
+    const stepUrl = $project?.stepUrl ?? null;
+    const glbUrl = $project?.glbUrl ?? null;
+    const kind: 'step' | 'glb' | null = stepUrl ? 'step' : glbUrl ? 'glb' : null;
+    const url = stepUrl ?? glbUrl ?? null;
 
-    // Remove previous
-    if (currentGlbGroup) {
-      scene.remove(currentGlbGroup);
-      currentGlbGroup.traverse((o) => {
-        const mesh = o as THREE.Mesh;
-        if (mesh.geometry) mesh.geometry.dispose();
-      });
-      currentGlbGroup = null;
-      refdesToMesh = new Map();
-    }
+    if (url === currentModelUrl) return;
+    currentModelUrl = url;
+    disposeCurrentModel();
 
-    if (!url) return;
+    if (!url || !kind) return;
 
-    loadGlb(url).then((group) => {
-      if (currentGlbUrl !== url) return;  // superseded by another project change
-      if (!scene) return;
-      group.userData['isGlbBoard'] = true;
-      scene.add(group);
-      currentGlbGroup = group;
-      refdesToMesh = indexByRefdes(group);
+    loading = true;
+    const loadPromise = kind === 'step'
+      ? fetch(url).then((r) => r.arrayBuffer()).then((b) => loadStep(new Uint8Array(b)))
+      : loadGlb(url);
 
-      // Auto-frame on initial load.
-      frameToGlb();
-    }).catch((e: unknown) => {
-      const msg = e instanceof Error ? e.message : String(e);
-      pushToast({ kind: 'error', message: `Couldn't load 3D model: ${msg}` });
-    });
+    loadPromise
+      .then((group) => {
+        if (currentModelUrl !== url) return; // superseded
+        if (!scene) return;
+        scene.add(group);
+        currentModelGroup = group;
+        refdesToMesh = indexByRefdes(group);
+        frameWhole();
+      })
+      .catch((e: unknown) => {
+        const msg = e instanceof Error ? e.message : String(e);
+        pushToast({ kind: 'error', message: `Couldn't load 3D model: ${msg}` });
+      })
+      .finally(() => { loading = false; });
   });
 
   // Raycast -> selection on click
   function onClick(ev: MouseEvent): void {
-    if (!camera || !canvas || !scene || !currentGlbGroup) return;
+    if (!camera || !canvas || !scene || !currentModelGroup) return;
     const rect = canvas.getBoundingClientRect();
     const x = ((ev.clientX - rect.left) / rect.width) * 2 - 1;
     const y = -(((ev.clientY - rect.top) / rect.height) * 2 - 1);
     raycaster.setFromCamera(new THREE.Vector2(x, y), camera);
-    const picks = raycaster.intersectObject(currentGlbGroup, true);
+    const picks = raycaster.intersectObject(currentModelGroup, true);
     for (const p of picks) {
       let o: THREE.Object3D | null = p.object;
       while (o) {
@@ -195,30 +214,34 @@
     clearSelection();
   }
 
-  async function ingestGlbFile(f: File): Promise<void> {
-    if (!/\.glb$/i.test(f.name)) {
-      pushToast({ kind: 'error', message: '3D: expected a .glb file' });
+  async function ingestModelFile(f: File): Promise<void> {
+    const lower = f.name.toLowerCase();
+    const isGlb = /\.glb$/i.test(lower);
+    const isStep = /\.(step|stp)$/i.test(lower);
+    if (!isGlb && !isStep) {
+      pushToast({ kind: 'error', message: '3D: expected a .glb, .step, or .stp file' });
       return;
     }
     const url = URL.createObjectURL(f);
-    setProjectGlbUrl(url);
+    if (isStep) setProjectStepUrl(url);
+    else setProjectGlbUrl(url);
   }
 
-  function onGlbDrop(ev: DragEvent): void {
+  function onModelDrop(ev: DragEvent): void {
     ev.preventDefault();
     const f = ev.dataTransfer?.files?.[0];
-    if (f) void ingestGlbFile(f);
+    if (f) void ingestModelFile(f);
   }
 
-  function onGlbPick(ev: Event): void {
+  function onModelPick(ev: Event): void {
     const t = ev.target as HTMLInputElement;
     const f = t.files?.[0];
-    if (f) void ingestGlbFile(f);
+    if (f) void ingestModelFile(f);
   }
 
   // Fit on external request.
   $effect(() => {
-    if (fitRequested > 0) frameToGlb();
+    if (fitRequested > 0) frameWhole();
   });
 
   // Preset on external request.
@@ -226,49 +249,62 @@
     if (presetRequested) goToPreset(presetRequested);
   });
 
-  // External selection -> camera pan to mesh
+  // External selection -> camera zoom+rotate to frame the selected component
+  // (using its footprint side so bottom-side parts aren't hidden behind the
+  // board). Tiny parts are padded to a minimum context so we don't end up
+  // nose-against-silkscreen.
   $effect(() => {
     const s = $selection;
     if (!s || s.kind !== 'component' || s.source === '3d') return;
-    if (!camera || !controls) return;
+    if (!camera || !controls || !currentModelGroup) return;
     const comp = $project?.components.find((c) => c.uuid === s.uuid);
     if (!comp) return;
     const mesh = refdesToMesh.get(comp.refdes);
     if (!mesh) return;
-    const target = new THREE.Vector3();
-    mesh.getWorldPosition(target);
+
+    // World-space bbox of the selected mesh.
+    const box = new THREE.Box3().setFromObject(mesh);
+    if (box.isEmpty()) return;
+
+    // Default to top if we don't know the side (best-effort).
+    const side: 'top' | 'bottom' = comp.side === 'bottom' ? 'bottom' : 'top';
+
     untrack(() => {
       if (!controls || !camera) return;
-      // Move the camera by the same delta so orbit radius is preserved
-      // and the selected subject actually enters the frustum.
-      const delta = target.clone().sub(controls.target);
-      controls.target.copy(target);
-      camera.position.add(delta);
+      const frame = computeComponentFrame(box.min, box.max, camera.fov, side);
+      controls.target.copy(frame.target);
+      camera.position.copy(frame.position);
+      camera.lookAt(frame.target);
       controls.update();
     });
   });
+
+  let hasModel = $derived(Boolean($project?.glbUrl || $project?.stepUrl));
 </script>
 
 <div class="stage" bind:this={host}>
-  <canvas bind:this={canvas} onclick={onClick} class:hidden={!$project?.glbUrl}></canvas>
-  {#if $project?.glbUrl}
+  <canvas bind:this={canvas} onclick={onClick} class:hidden={!hasModel}></canvas>
+  {#if hasModel}
     <div class="presets" aria-label="View presets">
       <button type="button" onclick={() => goToPreset('top')}>Top</button>
       <button type="button" onclick={() => goToPreset('bottom')}>Bottom</button>
       <button type="button" onclick={() => goToPreset('iso')}>Iso</button>
     </div>
   {/if}
-  {#if $project && !$project.glbUrl}
+  {#if loading}
+    <div class="loading">Loading 3D model…</div>
+  {/if}
+  {#if $project && !hasModel}
     <div class="empty"
       ondragover={(e) => { e.preventDefault(); }}
-      ondrop={onGlbDrop}
+      ondrop={onModelDrop}
       role="region"
-      aria-label="Drop a .glb file"
+      aria-label="Drop a 3D model file"
     >
       <p>No 3D asset loaded.</p>
-      <p class="dim">Drop a <code>.glb</code> here or include one in your bundle.</p>
-      <label class="btn">Pick .glb
-        <input type="file" accept=".glb,.gltf" hidden onchange={onGlbPick} />
+      <p class="dim">Drop a <code>.step</code>, <code>.stp</code>, or <code>.glb</code> here, or include one with your project bundle.</p>
+      <label class="btn">Pick 3D file
+        <input type="file" accept=".glb,.gltf,.step,.stp" hidden onchange={onModelPick} />
       </label>
     </div>
   {/if}
@@ -287,6 +323,13 @@
     position: absolute; inset: 0;
     display: grid; place-items: center; text-align: center;
     color: var(--kv-text);
+  }
+  .loading {
+    position: absolute; inset: 0;
+    display: grid; place-items: center;
+    color: var(--kv-text); background: rgba(0, 0, 0, 0.4);
+    font-size: 0.85rem;
+    pointer-events: none;
   }
   .dim { color: var(--kv-text-dim); font-size: 0.85rem; }
   .btn {

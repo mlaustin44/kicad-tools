@@ -31,6 +31,7 @@
   "dependencies": {
     "fflate": "^0.8.2",
     "flatbush": "^4.5.1",
+    "occt-import-js": "^0.0.23",
     "open-props": "^1.7.23",
     "three": "^0.183.2"
   }

@@ -4,6 +4,7 @@ export interface ProjectBlob {
   kicadPcb: string | null;
   schematics: string[];
   glb: string | null;
+  step: string | null;
   manifest: BundleManifest | null;
 }
 
@@ -19,6 +20,7 @@ export function classifyFiles(files: Record<string, string | Uint8Array>): Proje
   let kicadPcb: string | null = null;
   const schematics: string[] = [];
   let glb: string | null = null;
+  let step: string | null = null;
   let manifest: BundleManifest | null = null;
 
   for (const name of Object.keys(files)) {
@@ -27,13 +29,14 @@ export function classifyFiles(files: Record<string, string | Uint8Array>): Proje
     else if (lower.endsWith('.kicad_pcb')) kicadPcb = name;
     else if (lower.endsWith('.kicad_sch')) schematics.push(name);
     else if (lower.endsWith('.glb')) glb = name;
+    else if (lower.endsWith('.step') || lower.endsWith('.stp')) step = name;
     else if (lower === 'manifest.json') {
       const raw = files[name];
       const text = typeof raw === 'string' ? raw : new TextDecoder().decode(raw);
       manifest = JSON.parse(text);
     }
   }
-  return { files, kicadPro, kicadPcb, schematics, glb, manifest };
+  return { files, kicadPro, kicadPcb, schematics, glb, step, manifest };
 }
 
 export function rootSchematic(blob: ProjectBlob): string | null {
