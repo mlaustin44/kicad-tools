@@ -4,6 +4,7 @@
   import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
   import { project, setProjectGlbUrl } from '$lib/stores/project';
   import { selection, selectComponent } from '$lib/stores/selection';
+  import { theme } from '$lib/stores/theme';
   import { loadGlb, indexByRefdes } from '$lib/three/loader';
   import { pushToast } from '$lib/stores/toasts';
 
@@ -20,11 +21,18 @@
   let controls: OrbitControls | null = null;
   const raycaster = new THREE.Raycaster();
 
+  function readRenderBgColor(): number {
+    if (typeof getComputedStyle === 'undefined') return 0x0b0d12;
+    const v = getComputedStyle(document.body).getPropertyValue('--kv-render-bg').trim();
+    if (v.startsWith('#') && v.length === 7) return parseInt(v.slice(1), 16);
+    return 0x0b0d12;
+  }
+
   onMount(() => {
     if (!canvas || !host) return;
 
     scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x0b0d12);
+    scene.background = new THREE.Color(readRenderBgColor());
 
     camera = new THREE.PerspectiveCamera(45, 1, 0.1, 5000);
     camera.position.set(100, 80, 100);
@@ -73,6 +81,12 @@
     camera.aspect = r.width / r.height;
     camera.updateProjectionMatrix();
   }
+
+  // Re-theme the 3D scene background when the theme token changes.
+  $effect(() => {
+    $theme;
+    if (scene) scene.background = new THREE.Color(readRenderBgColor());
+  });
 
   // Load / swap GLB when the project's glbUrl changes
   $effect(() => {
