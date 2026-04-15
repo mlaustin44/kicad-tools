@@ -2,6 +2,7 @@
   import { onMount, untrack } from 'svelte';
   import * as THREE from 'three';
   import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+  import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
   import { project, setProjectGlbUrl, setProjectStepUrl } from '$lib/stores/project';
   import { selection, selectComponent, clearSelection } from '$lib/stores/selection';
   import { theme } from '$lib/stores/theme';
@@ -128,14 +129,26 @@
       powerPreference: 'high-performance'
     });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.1;
 
     controls = new OrbitControls(camera, canvas);
     controls.enableDamping = true;
 
-    scene.add(new THREE.AmbientLight(0xffffff, 0.5));
-    const dir = new THREE.DirectionalLight(0xffffff, 1.0);
-    dir.position.set(100, 200, 100);
-    scene.add(dir);
+    // PBR lighting: without an environment map, metallic materials render as
+    // flat grey because they have nothing to reflect. RoomEnvironment gives
+    // us a cheap baked indoor-studio reflection so copper actually looks like
+    // copper and the mask/silk pick up shape from ambient reflection.
+    const pmrem = new THREE.PMREMGenerator(renderer);
+    scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+    scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+    const key = new THREE.DirectionalLight(0xffffff, 1.4);
+    key.position.set(100, 200, 100);
+    scene.add(key);
+    const fill = new THREE.DirectionalLight(0xc0d4ff, 0.4);
+    fill.position.set(-120, -40, -80);
+    scene.add(fill);
 
     const ro = new ResizeObserver(() => resize());
     ro.observe(host);
@@ -341,26 +354,58 @@
     if (presetRequested) goToPreset(presetRequested);
   });
 
+  // Tracks the emissive highlight we apply to selected components so we can
+  // undo it on the next selection. Map<Material, originalEmissive>.
+  const highlightedMaterials = new Map<THREE.MeshStandardMaterial, THREE.Color>();
+  const HIGHLIGHT_COLOR = new THREE.Color(0x4a90e2);
+
+  function clearHighlight(): void {
+    for (const [mat, original] of highlightedMaterials) {
+      mat.emissive.copy(original);
+      mat.emissiveIntensity = 0;
+    }
+    highlightedMaterials.clear();
+  }
+
+  function applyHighlight(obj: THREE.Object3D): void {
+    obj.traverse((o) => {
+      const mesh = o as THREE.Mesh;
+      if (!mesh.isMesh) return;
+      const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+      for (const m of mats) {
+        const std = m as THREE.MeshStandardMaterial;
+        if (!std || !std.emissive) continue;
+        if (!highlightedMaterials.has(std)) {
+          highlightedMaterials.set(std, std.emissive.clone());
+        }
+        std.emissive.copy(HIGHLIGHT_COLOR);
+        std.emissiveIntensity = 0.7;
+      }
+    });
+  }
+
   // External selection -> camera zoom+rotate to frame the selected component
-  // (using its footprint side so bottom-side parts aren't hidden behind the
-  // board). Tiny parts are padded to a minimum context so we don't end up
-  // nose-against-silkscreen.
+  // AND emissive-highlight its mesh so the user can see what's selected.
+  // For 3d-source selections we still highlight (visual feedback) but skip
+  // camera motion (the user is already looking at what they clicked).
   $effect(() => {
     const s = $selection;
-    if (!s || s.kind !== 'component' || s.source === '3d') return;
+    clearHighlight();
+    if (!s || s.kind !== 'component') return;
     if (!camera || !controls || !currentModelGroup) return;
     const comp = $project?.components.find((c) => c.uuid === s.uuid);
     if (!comp) return;
     const mesh = refdesToMesh.get(comp.refdes);
     if (!mesh) return;
 
-    // World-space bbox of the selected mesh.
+    applyHighlight(mesh);
+
+    if (s.source === '3d') return; // already looking at it
+
+    // World-space bbox of the selected mesh for the framing pass.
     const box = new THREE.Box3().setFromObject(mesh);
     if (box.isEmpty()) return;
-
-    // Default to top if we don't know the side (best-effort).
     const side: 'top' | 'bottom' = comp.side === 'bottom' ? 'bottom' : 'top';
-
     untrack(() => {
       if (!controls || !camera) return;
       const frame = computeComponentFrame(box.min, box.max, camera.fov, side);
