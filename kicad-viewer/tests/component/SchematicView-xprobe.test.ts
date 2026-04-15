@@ -7,7 +7,7 @@ import type { Project } from '$lib/model/project';
 
 const p: Project = {
   name: 'x', source: 'raw', nets: [],
-  pcb: { boundsMm: { x:0,y:0,w:0,h:0 }, layers: [], stackup: [], footprints: [], tracks: [], vias: [], zones: [], drills: [] },
+  pcb: { boundsMm: { x:0,y:0,w:0,h:0 }, layers: [], stackup: [], footprints: [], tracks: [], vias: [], zones: [], drills: [], boardGraphics: [] },
   sheets: [{
     uuid: 's0', name: 'root', path: ['root'], parent: null,
     componentUuids: ['u1'], boundsMm: { x:0, y:0, w:100, h:100 }

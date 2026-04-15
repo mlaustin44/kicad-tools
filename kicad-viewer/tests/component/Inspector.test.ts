@@ -7,7 +7,7 @@ import type { Project } from '$lib/model/project';
 
 const fake: Project = {
   name: 'x', sheets: [], nets: [],
-  pcb: { boundsMm: { x:0,y:0,w:0,h:0 }, layers: [], stackup: [], footprints: [], tracks: [], vias: [], zones: [], drills: [] },
+  pcb: { boundsMm: { x:0,y:0,w:0,h:0 }, layers: [], stackup: [], footprints: [], tracks: [], vias: [], zones: [], drills: [], boardGraphics: [] },
   source: 'raw',
   components: [{
     uuid: 'u1', refdes: 'R1', value: '10k', footprint: 'R_0603',

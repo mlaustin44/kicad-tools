@@ -1,4 +1,4 @@
-import type { Project, FootprintGeom, TrackSeg, Via, Zone } from '$lib/model/project';
+import type { Project, FootprintGeom, TrackSeg, Via, Zone, Graphic, Pad } from '$lib/model/project';
 import { buildRtree, type RtreeIndex } from '$lib/geom/rtree';
 
 export interface PcbScene {
@@ -13,6 +13,8 @@ export interface LayerBuckets {
   vias: Via[];
   zones: Zone[];
   graphics: { from: FootprintGeom; idx: number }[];
+  boardGraphics: Graphic[];
+  pads: Array<{ fp: FootprintGeom; pad: Pad }>;
 }
 
 export function buildPcbScene(project: Project): PcbScene {
@@ -20,7 +22,14 @@ export function buildPcbScene(project: Project): PcbScene {
   const ensure = (id: string) => {
     const b = byLayer.get(id);
     if (b) return b;
-    const n: LayerBuckets = { tracks: [], vias: [], zones: [], graphics: [] };
+    const n: LayerBuckets = {
+      tracks: [],
+      vias: [],
+      zones: [],
+      graphics: [],
+      boardGraphics: [],
+      pads: []
+    };
     byLayer.set(id, n);
     return n;
   };
@@ -30,6 +39,14 @@ export function buildPcbScene(project: Project): PcbScene {
   for (const z of project.pcb.zones)      ensure(z.layerId).zones.push(z);
   for (const f of project.pcb.footprints) {
     f.graphics.forEach((g, i) => ensure(g.layerId).graphics.push({ from: f, idx: i }));
+    for (const pad of f.pads) {
+      for (const layerId of pad.layerIds) {
+        ensure(layerId).pads.push({ fp: f, pad });
+      }
+    }
+  }
+  for (const bg of project.pcb.boardGraphics ?? []) {
+    ensure(bg.layerId).boardGraphics.push(bg);
   }
 
   const footprintIndex = buildRtree(

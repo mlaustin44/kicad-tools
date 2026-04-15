@@ -16,7 +16,7 @@ const baseProject = (): Project => ({
       bboxMm: { x: 8, y: 9, w: 4, h: 2 }, pads: [], graphics: []
     }],
     tracks: [{ layerId: 'F.Cu', a: { x:0, y:0 }, b: { x:5, y:0 }, widthMm: 0.25, netName: 'VCC' }],
-    vias: [], zones: [], drills: []
+    vias: [], zones: [], drills: [], boardGraphics: []
   }
 });
 
@@ -25,5 +25,29 @@ describe('pcb scene', () => {
     const scene = buildPcbScene(baseProject());
     expect(scene.byLayer.get('F.Cu')?.tracks.length).toBe(1);
     expect(scene.footprintIndex.ids).toContain('u1');
+  });
+
+  it('buckets pads and board graphics per layer', () => {
+    const project = baseProject();
+    project.pcb.footprints[0]!.pads = [
+      {
+        number: '1',
+        shape: 'rect',
+        layerIds: ['F.Cu', 'F.Paste'],
+        positionMm: { x: 0, y: 0 },
+        sizeMm: { w: 1, h: 1 },
+        netName: 'VCC'
+      }
+    ];
+    project.pcb.boardGraphics = [
+      {
+        layerId: 'Edge.Cuts',
+        geom: { kind: 'line', a: { x: 0, y: 0 }, b: { x: 50, y: 0 }, widthMm: 0.1 }
+      }
+    ];
+    const scene = buildPcbScene(project);
+    expect(scene.byLayer.get('F.Cu')?.pads.length).toBe(1);
+    expect(scene.byLayer.get('F.Paste')?.pads.length).toBe(1);
+    expect(scene.byLayer.get('Edge.Cuts')?.boardGraphics.length).toBe(1);
   });
 });
