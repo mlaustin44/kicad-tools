@@ -138,9 +138,12 @@ const ZONE_LABEL_PX = 14;
 // Tracks and pad net labels are only useful when you're zoomed in enough to
 // read them without covering everything else. Zone labels stay visible a bit
 // earlier because the polygons they sit on are themselves big.
-const MIN_ZOOM_FOR_TRACK_LABELS = 4;
-const MIN_ZOOM_FOR_PAD_NET = 6;
-const MIN_ZOOM_FOR_ZONE_LABELS = 1.5;
+const MIN_ZOOM_FOR_TRACK_LABELS = 6;
+const MIN_ZOOM_FOR_PAD_NET = 8;
+const MIN_ZOOM_FOR_ZONE_LABELS = 2;
+// Minimum world-space separation between two labels for the *same* net.
+// Prevents a long bus being labeled at every segment midpoint.
+const SAME_NET_MIN_SPACING_MM = 30;
 
 // Axis-aligned bounding box for a rendered label, in world (mm) coordinates.
 // We use these to prevent labels from piling up on top of each other in dense
@@ -228,7 +231,10 @@ function drawCopperLabels(
   }
 
   // Tracks last: skipped entirely at low zoom, collision-filtered at high zoom.
+  // Per-net centers lets us enforce a minimum spacing between labels on the
+  // same net so a single long trace gets one label, not one per segment.
   if (pxPerMm >= MIN_ZOOM_FOR_TRACK_LABELS) {
+    const perNetCenters = new Map<string, Array<{ x: number; y: number }>>();
     for (const id of copperIds) {
       const l = layers.find((x) => x.id === id);
       if (!l || !visible.get(l.id)) continue;
@@ -236,7 +242,7 @@ function drawCopperLabels(
       if (!buckets) continue;
       for (const t of buckets.tracks) {
         if (!t.netName) continue;
-        drawTrackLabel(ctx, t, pxPerMm, placed);
+        drawTrackLabel(ctx, t, pxPerMm, placed, perNetCenters);
       }
     }
   }
@@ -246,7 +252,8 @@ function drawTrackLabel(
   ctx: CanvasRenderingContext2D,
   t: TrackSeg,
   pxPerMm: number,
-  placed: LabelBox[]
+  placed: LabelBox[],
+  perNetCenters: Map<string, Array<{ x: number; y: number }>>
 ): void {
   if (!t.netName) return;
   const dx = t.b.x - t.a.x;
@@ -262,6 +269,16 @@ function drawTrackLabel(
 
   const mx = (t.a.x + t.b.x) / 2;
   const my = (t.a.y + t.b.y) / 2;
+
+  // Skip if there's already a same-net label within SAME_NET_MIN_SPACING_MM.
+  // One label per long trace is plenty; this trace just repeats it elsewhere.
+  const existing = perNetCenters.get(t.netName);
+  if (existing) {
+    for (const c of existing) {
+      if (Math.hypot(c.x - mx, c.y - my) < SAME_NET_MIN_SPACING_MM) return;
+    }
+  }
+
   let angle = Math.atan2(dy, dx);
   if (angle > Math.PI / 2) angle -= Math.PI;
   else if (angle < -Math.PI / 2) angle += Math.PI;
@@ -269,6 +286,10 @@ function drawTrackLabel(
   const box = rotatedLabelBox(mx, my, approxWidthMm, heightMm * 1.2, angle);
   if (placed.some((p) => bboxesOverlap(p, box))) return;
   placed.push(box);
+
+  const centers = perNetCenters.get(t.netName) ?? [];
+  centers.push({ x: mx, y: my });
+  perNetCenters.set(t.netName, centers);
 
   ctx.save();
   ctx.translate(mx, my);

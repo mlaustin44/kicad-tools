@@ -15,6 +15,15 @@ import {
   type Drawing as ParserDrawing
 } from '$lib/parser/board';
 import { Vec2 } from '$lib/parser/base/math';
+import { unescape_string } from '$lib/parser/common';
+
+// KiCad encodes special characters in hierarchical net paths as {slash},
+// {backslash}, {space}, etc. Decode once at the adapter boundary so every
+// downstream consumer (renderer, search, inspector) sees plain strings.
+function cleanNetName(s: string | null | undefined): string | null {
+  if (!s) return null;
+  return unescape_string(s);
+}
 import type {
   Project,
   Sheet,
@@ -269,7 +278,7 @@ function extractPins(sym: SchematicSymbol, fp: FootprintGeom | undefined): Pin[]
     const number = p.number?.text ?? '?';
     const name = p.name?.text ?? '';
     const pad = fp?.pads.find((pd) => pd.number === number);
-    pins.push({ number, name, netName: pad?.netName ?? null });
+    pins.push({ number, name, netName: cleanNetName(pad?.netName) });
   }
   return pins;
 }
@@ -379,7 +388,7 @@ function toModelPad(pad: ParserPad, pcb: KicadPCB): ModelPad {
     layerIds,
     positionMm: pos,
     sizeMm: size,
-    netName: pad.netname ?? null
+    netName: cleanNetName(pad.netname)
   };
   // Through-hole pads carry a drill.diameter; only set when truthy to respect
   // exactOptionalPropertyTypes.
@@ -523,11 +532,12 @@ function buildZones(pcb: KicadPCB): ModelZone[] {
   const out: ModelZone[] = [];
   const collect = (zone: ParserZone): void => {
     // KiCad 10 stores the net as a name atom; KiCad 9 used a number index.
-    const netName =
+    const rawNetName =
       zone.net_name ||
       (typeof zone.net === 'string' ? zone.net : null) ||
       (typeof zone.net === 'number' ? pcb.get_netname_by_number(zone.net) : null) ||
       null;
+    const netName = cleanNetName(rawNetName);
     // Prefer filled polygons per layer when available — render matches plotted output.
     if (zone.filled_polygons && zone.filled_polygons.length > 0) {
       for (const fp of zone.filled_polygons) {
@@ -568,9 +578,10 @@ function buildVias(pcb: KicadPCB): ModelVia[] {
   const out: ModelVia[] = [];
   for (const v of pcb.vias ?? []) {
     const layers = v.layers ?? [];
-    const netName =
+    const rawVia =
       (typeof v.net === 'string' ? v.net : null) ??
       (typeof v.net === 'number' ? pcb.get_netname_by_number(v.net) ?? null : null);
+    const netName = cleanNetName(rawVia);
     out.push({
       position: { x: v.at?.position?.x ?? 0, y: v.at?.position?.y ?? 0 },
       diameterMm: v.size ?? 0.6,
@@ -592,7 +603,7 @@ function buildTracks(pcb: KicadPCB): TrackSeg[] {
         a: { x: seg.start.x, y: seg.start.y },
         b: { x: seg.end.x, y: seg.end.y },
         widthMm: seg.width,
-        netName: seg.netname ?? null
+        netName: cleanNetName(seg.netname)
       });
     } else if (seg instanceof ArcSegment) {
       // Approximate an arc as start-end chord for now.
@@ -601,7 +612,7 @@ function buildTracks(pcb: KicadPCB): TrackSeg[] {
         a: { x: seg.start.x, y: seg.start.y },
         b: { x: seg.end.x, y: seg.end.y },
         widthMm: seg.width,
-        netName: seg.netname ?? null
+        netName: cleanNetName(seg.netname)
       });
     }
   }
@@ -613,10 +624,12 @@ function buildNets(pcb: KicadPCB, pcbData: PcbData, components: Component[]): Ne
   for (const c of components) byRefdes.set(c.refdes, c);
 
   // Map of net name -> list of (refdes, pad number) from footprint pads.
+  // Net names are decoded (e.g. "{slash}" → "/") so they match the rest of the
+  // project model.
   const netPins = new Map<string, Array<{ refdes: string; pin: string }>>();
   for (const fp of pcb.footprints) {
     for (const pad of fp.pads) {
-      const name = pad.net?.name;
+      const name = cleanNetName(pad.net?.name);
       if (!name) continue;
       if (!byRefdes.has(fp.reference)) continue;
       const arr = netPins.get(name) ?? [];
@@ -629,7 +642,8 @@ function buildNets(pcb: KicadPCB, pcbData: PcbData, components: Component[]): Ne
   // derive from tracks/vias.
   const names = new Set<string>();
   for (const n of pcb.nets) {
-    if (n.name) names.add(n.name);
+    const cleaned = cleanNetName(n.name);
+    if (cleaned) names.add(cleaned);
   }
   if (names.size === 0) {
     for (const t of pcbData.tracks) if (t.netName) names.add(t.netName);
