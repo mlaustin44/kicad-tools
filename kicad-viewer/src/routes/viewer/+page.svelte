@@ -2,6 +2,7 @@
   import Shell from '$lib/ui/Shell.svelte';
   import DropZone from '$lib/ui/DropZone.svelte';
   import Toast from '$lib/ui/Toast.svelte';
+  import Inspector from '$lib/ui/Inspector.svelte';
   import { project } from '$lib/stores/project';
 
   let tab = $state('sch');
@@ -12,7 +13,7 @@
 {#if $project}
   <Shell {tab} onTabChange={(v) => (tab = v)}>
     {#snippet sidebar()}<div class="panel">sidebar ({tab})</div>{/snippet}
-    {#snippet inspector()}<div class="panel">inspector</div>{/snippet}
+    {#snippet inspector()}<Inspector />{/snippet}
     <div class="stage">render area ({tab})</div>
   </Shell>
 {:else}
