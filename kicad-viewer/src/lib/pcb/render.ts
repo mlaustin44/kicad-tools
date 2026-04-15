@@ -137,18 +137,20 @@ export function drawPcb(
 // zoom-in once the world floor kicks in, and hides them at zoom-out once the
 // MAX_WORLD clamp pushes the on-screen height below MIN_READABLE_PX.
 const MIN_READABLE_PX = 6;
-// Track labels target ~10 CSS px at normal zoom. A small world-space floor
-// kicks in only at very high zoom (≥40 px/mm) so the label grows gently as
-// you keep zooming in, without hurting short-segment labeling at mid zoom.
-const TRACK_TARGET_PX = 10;
-const TRACK_MIN_WORLD_MM = 0.25;
-const TRACK_MAX_WORLD_MM = 1.2;
+// Track labels default to the trace's own width (so the label naturally grows
+// with zoom and reads as "belonging to" that trace). Clamped to a sane range,
+// and shrunk proportionally if the label would overflow the segment length.
+const TRACK_BASE_MIN_MM = 0.2;
+const TRACK_BASE_MAX_MM = 1.2;
+// At moderate zoom we also want a minimum screen height so very thin traces
+// still get readable labels — clamps the shrunk value back up.
+const TRACK_MIN_SCREEN_PX = 8;
 // Pads: fraction of the pad's short dimension for sane defaults, with a small
 // world-size floor for readability at extreme zoom-in and a tight cap so big
 // thermal/connector pads don't get huge text.
-const PAD_NUM_FRACTION = 0.3;
-const PAD_NET_FRACTION = 0.22;
-const PAD_NUM_MIN_WORLD_MM = 0.4;
+const PAD_NUM_FRACTION = 0.28;
+const PAD_NET_FRACTION = 0.2;
+const PAD_NUM_MIN_WORLD_MM = 0.28;
 const PAD_NUM_MAX_WORLD_MM = 0.8;
 // Net names get rendered as pad subtitles only when the pad is big enough to
 // warrant it — connectors, thermal pads, large SMD. Small IC pins would just
@@ -160,7 +162,12 @@ const ZONE_LABEL_MAX_MM = 6;
 // Minimum on-screen separation between two labels for the *same* net. Using
 // screen space (not world space) means dense labels at high zoom and wide
 // spacing at low zoom — proportional to how much board you can actually see.
-const SAME_NET_MIN_SPACING_PX = 220;
+const SAME_NET_MIN_SPACING_PX = 160;
+// Once zoomed in past this, we expect every trace to carry its own label so
+// the user can read routing without panning. Above the threshold we skip the
+// "label must fit within segment" check and drop the same-net spacing to
+// zero; different-net collision still prevents pile-ups.
+const FULL_LABELS_ZOOM_PX_PER_MM = 18;
 
 // Axis-aligned bounding box for a rendered label, in world (mm) coordinates.
 // We use these to prevent labels from piling up on top of each other in dense
@@ -269,28 +276,49 @@ function drawTrackLabel(
   const lengthMm = Math.hypot(dx, dy);
   if (lengthMm <= 0) return;
 
-  // Clamped screen-relative: labels stay ~TRACK_TARGET_PX on screen through
-  // normal zoom, and grow past that at extreme zoom-in (floor kicks in ~40
-  // px/mm). Max cap prevents absurd labels at very low zoom.
-  const heightMm = Math.min(
-    TRACK_MAX_WORLD_MM,
-    Math.max(TRACK_MIN_WORLD_MM, TRACK_TARGET_PX / pxPerMm)
-  );
+  // Feature-relative baseline: label height matches the trace width, so the
+  // label is visually tied to its trace and grows with zoom alongside it.
+  // Clamp to [MIN, MAX] for sanity.
+  let heightMm = Math.min(TRACK_BASE_MAX_MM, Math.max(TRACK_BASE_MIN_MM, t.widthMm));
+
+  // If the label would overflow the segment, shrink the whole label
+  // proportionally until it fits — keeps the label linked to its trace
+  // instead of bleeding onto neighbors.
+  const maxLabelWidthMm = lengthMm * 0.95;
+  const baseWidthMm = t.netName.length * heightMm * 0.55;
+  if (baseWidthMm > maxLabelWidthMm) {
+    heightMm *= maxLabelWidthMm / baseWidthMm;
+  }
+
+  // But don't go below a readable screen size. Above the full-labels zoom
+  // threshold we also let labels overflow the segment (they'll just extend
+  // past the endpoints) so every trace gets named when you're zoomed in.
+  const minHeightMm = TRACK_MIN_SCREEN_PX / pxPerMm;
+  if (heightMm < minHeightMm) {
+    if (pxPerMm >= FULL_LABELS_ZOOM_PX_PER_MM) {
+      heightMm = minHeightMm;
+    } else {
+      return;
+    }
+  }
   if (heightMm * pxPerMm < MIN_READABLE_PX) return;
+
   const approxWidthMm = t.netName.length * heightMm * 0.55;
-  if (approxWidthMm > lengthMm * 0.85) return;
 
   const mx = (t.a.x + t.b.x) / 2;
   const my = (t.a.y + t.b.y) / 2;
 
   // Skip if there's already a same-net label within SAME_NET_MIN_SPACING_PX
-  // on screen. One label per visible neighborhood is enough; any further
-  // copies would just be restating the same name within a glance's range.
-  const minSpacingMm = SAME_NET_MIN_SPACING_PX / pxPerMm;
-  const existing = perNetCenters.get(t.netName);
-  if (existing) {
-    for (const c of existing) {
-      if (Math.hypot(c.x - mx, c.y - my) < minSpacingMm) return;
+  // on screen. Above FULL_LABELS_ZOOM_PX_PER_MM we drop this check — when
+  // you're zoomed in to read routing, you want every trace's label, not one
+  // per-neighborhood.
+  if (pxPerMm < FULL_LABELS_ZOOM_PX_PER_MM) {
+    const minSpacingMm = SAME_NET_MIN_SPACING_PX / pxPerMm;
+    const existing = perNetCenters.get(t.netName);
+    if (existing) {
+      for (const c of existing) {
+        if (Math.hypot(c.x - mx, c.y - my) < minSpacingMm) return;
+      }
     }
   }
 
