@@ -22,7 +22,7 @@
       Cross-probe components between views. Drop a project folder, <code>.zip</code>,
       or individual files (<code>.kicad_pro</code>, <code>.kicad_sch</code>, and
       <code>.kicad_pcb</code>) to get started! Upload a
-      <a href="https://docs.kicad.org/9.0/en/cli/cli.html#pcb_export_glb" target="_blank" rel="noopener"><code>.glb</code></a>
+      <a href="https://docs.kicad.org/10.0/en/cli/cli.html#pcb_export_glb" target="_blank" rel="noopener"><code>.glb</code></a>
       file to view and cross-probe in 3D.
     </p>
     <p class="privacy">
