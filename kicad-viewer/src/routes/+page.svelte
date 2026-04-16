@@ -16,15 +16,23 @@
   </header>
 
   <section class="hero">
-    <h1>A browser-based KiCad project viewer.</h1>
+    <h1>kicad-viewer</h1>
     <p>
-      Schematic, PCB, and 3D views in one place, with full cross-probing between them.
-      Drop a project folder or <code>.zip</code> and it renders — no upload, no install,
-      runs entirely in your browser.
+      Web-based KiCad viewer with Schematic, PCB layout, and 3D viewer.
+      Cross-probe components between views. Drop a project folder, <code>.zip</code>,
+      or individual files (<code>.kicad_pro</code>, <code>.kicad_sch</code>, and
+      <code>.kicad_pcb</code>) to get started! Upload a
+      <a href="https://docs.kicad.org/9.0/en/cli/cli.html#pcb_export_glb" target="_blank" rel="noopener"><code>.glb</code></a>
+      file to view and cross-probe in 3D.
+    </p>
+    <p class="privacy">
+      Your data lives only in your browser — nothing is saved or uploaded, and the
+      project is fully open-source on
+      <a href="https://github.com/mlaustin44/kicad-tools" target="_blank" rel="noopener">my GitHub</a>.
     </p>
     <nav class="cta">
       <a class="btn btn-primary" href="/viewer">Open viewer →</a>
-      <a class="btn btn-secondary" href="https://github.com/mlaustin44/kicad-tools">GitHub</a>
+      <a class="btn btn-secondary" href="https://github.com/mlaustin44/kicad-tools" target="_blank" rel="noopener">GitHub</a>
     </nav>
   </section>
 
@@ -55,6 +63,13 @@
   .hero p {
     color: var(--kv-text-dim); max-width: 52ch; line-height: 1.55;
     margin: 0 0 1.5rem;
+  }
+  .hero a { color: var(--kv-accent); text-decoration: none; }
+  .hero a:hover { text-decoration: underline; }
+  .privacy { font-size: 0.85rem; opacity: 0.75; }
+  .hero code {
+    background: var(--kv-surface-2); padding: 0.1em 0.35em;
+    border-radius: 4px; font-size: 0.9em; color: var(--kv-text);
   }
   .cta { display: flex; gap: 0.75rem; }
   .btn {
