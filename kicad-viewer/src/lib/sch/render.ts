@@ -32,9 +32,11 @@ const PIN_NUM_SIZE = 1.27;
 const PIN_NAME_SIZE = 1.27;
 
 const PAGE_MARGIN = 10;
-const TITLE_W_A3 = 165;
-const TITLE_W_A4 = 130;
-const TITLE_H = 35;
+// KiCad's default drawing sheet uses a fixed 108×32mm title block for all
+// paper sizes, anchored 2mm from the bottom-right of the drawing area.
+// (Source: common/drawing_sheet/drawing_sheet_default_description.cpp)
+const TITLE_W = 108;
+const TITLE_H = 32;
 
 // ---------- entry ----------
 
@@ -102,8 +104,7 @@ function pageFrameAndTitleBlock(sheet: Sheet): string {
 function titleBlockSvg(sheet: Sheet, rightX: number, bottomY: number): string {
   const info = sheet.titleBlock;
   const paper = sheet.paper ?? 'A4';
-  const largePaper = paper === 'A3' || paper === 'A2' || paper === 'A1' || paper === 'A0';
-  const boxW = largePaper ? TITLE_W_A3 : TITLE_W_A4;
+  const boxW = TITLE_W;
   const boxH = TITLE_H;
   const x0 = rightX - boxW;
   const y0 = bottomY - boxH;
@@ -179,7 +180,7 @@ function titleBlockSvg(sheet: Sheet, rightX: number, bottomY: number): string {
   const padX = 1.5;
   const labelSize = 1.4;
   const valSize = 2.0;
-  const titleSize = largePaper ? 4.2 : 3.4;
+  const titleSize = 3.4;
 
   // Comments (oldest at top, newest at bottom of their row).
   for (let i = 0; i < commentRows; i++) {
