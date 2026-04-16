@@ -1,13 +1,15 @@
-import adapter from '@sveltejs/adapter-static';
+import adapter from '@sveltejs/adapter-cloudflare';
 import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
 
 export default {
   preprocess: vitePreprocess(),
   kit: {
     adapter: adapter({
-      fallback: 'index.html',  // SPA fallback for client-side routing
-      precompress: false,
-      strict: true
+      routes: {
+        // Let the Worker handle all routes (SPA with client-side routing).
+        include: ['/*'],
+        exclude: ['<all>']
+      }
     })
   }
 };
