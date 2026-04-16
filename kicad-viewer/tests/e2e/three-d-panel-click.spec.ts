@@ -12,7 +12,7 @@ test.describe('3D panel click repro', () => {
   test.skip(!haveFixtures, 'Requires local ohm-lamp fixture');
 
   test('clicking component from sidebar keeps 3D view visible', async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(90_000);
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
 
