@@ -28,11 +28,11 @@
     <p class="privacy">
       Your data lives only in your browser — nothing is saved or uploaded, and the
       project is fully open-source on
-      <a href="https://github.com/mlaustin44/kicad-tools" target="_blank" rel="noopener">my GitHub</a>.
+      <a href="https://github.com/mlaustin44/kicad-tools/tree/main/kicad-viewer" target="_blank" rel="noopener">my GitHub</a>.
     </p>
     <nav class="cta">
       <a class="btn btn-primary" href="/viewer">Open viewer →</a>
-      <a class="btn btn-secondary" href="https://github.com/mlaustin44/kicad-tools" target="_blank" rel="noopener">GitHub</a>
+      <a class="btn btn-secondary" href="https://github.com/mlaustin44/kicad-tools/tree/main/kicad-viewer" target="_blank" rel="noopener">GitHub</a>
     </nav>
   </section>
 
