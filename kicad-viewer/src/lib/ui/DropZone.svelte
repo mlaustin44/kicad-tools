@@ -71,8 +71,10 @@
   role="region"
   aria-label="Drop a KiCad project"
 >
-  <h2>Drop a KiCad project here</h2>
-  <p>A folder, a <code>.zip</code>, or individual <code>.kicad_pro</code> / <code>.kicad_pcb</code> / <code>.kicad_sch</code> files.</p>
+  <h2>kicad-viewer</h2>
+  <p>Web-based KiCad viewer with Schematic, PCB layout, and 3D viewer. Cross-probe components between views.</p>
+  <p>Drop a project folder, <code>.zip</code>, or individual files (<code>.kicad_pro</code>, <code>.kicad_sch</code>, and <code>.kicad_pcb</code>) to get started! Upload a <a href="https://docs.kicad.org/9.0/en/cli/cli.html#pcb_export_glb" target="_blank" rel="noopener"><code>.glb</code></a> file to view and cross-probe in 3D.</p>
+  <p class="privacy">Your data lives only in your browser — nothing is saved or uploaded, and the project is fully open-source on <a href="https://github.com/mlaustin44/kicad-tools" target="_blank" rel="noopener">my GitHub</a>.</p>
   <div class="row">
     <label class="btn">Pick files
       <input type="file" multiple hidden onchange={onPickFiles} />
@@ -88,6 +90,9 @@
     color: var(--kv-text-dim);
   }
   .drop.active { border-color: var(--kv-accent); background: var(--kv-surface-2); }
+  .drop a { color: var(--kv-accent); text-decoration: none; }
+  .drop a:hover { text-decoration: underline; }
+  .privacy { font-size: 0.8rem; opacity: 0.7; margin-top: 0.5rem; }
   .row { display: flex; gap: 0.75rem; margin-top: 0.5rem; }
   .btn {
     padding: 0.5rem 0.9rem; border: 1px solid var(--kv-border);
