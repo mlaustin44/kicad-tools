@@ -755,19 +755,18 @@ function renderPinTextWorld(
   }
 
   if (!hideNumbers && pin.number?.text) {
-    // Place number above the pin line (perpendicular offset, rotated outward=0
-    // sits +Y locally). Midpoint between the pin anchor and its end.
+    // Place number above the pin line (perpendicular offset). Midpoint between
+    // the pin anchor and its end, with a larger perpendicular offset so pin
+    // numbers don't overlap nearby net labels at zoomed-out scales.
     const mx = (anchorWorld.x + endX) / 2;
     const my = (anchorWorld.y + endY) / 2;
-    // Perpendicular offset: rotate outward by -90° (y-down) so the number sits
-    // on the "upper" side when the pin is drawn left-to-right.
-    const perpX = sin * 0.6;
-    const perpY = -cos * 0.6;
+    const perpX = sin * 0.8;
+    const perpY = -cos * 0.8;
     const numSize = pin.number.effects?.font?.size?.y ?? PIN_NUM_SIZE;
     out.push(
       `<g transform="translate(${fmt(mx + perpX)} ${fmt(my + perpY)}) rotate(${fmt(glyphRot)})">` +
-      `<text x="0" y="0" font-size="${fmt(numSize * 0.85)}" text-anchor="middle" ` +
-      `dominant-baseline="alphabetic" fill="currentColor" opacity="0.85">` +
+      `<text x="0" y="0" font-size="${fmt(numSize * 0.7)}" text-anchor="middle" ` +
+      `dominant-baseline="alphabetic" fill="currentColor" opacity="0.5" class="sch-pin-num">` +
       renderMarkupSvg(pin.number.text) +
       `</text></g>`
     );
