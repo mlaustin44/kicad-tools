@@ -475,7 +475,8 @@
         Drop a <code>.glb</code> (recommended — includes silkscreen, copper, mask; loads instantly)
         or a <code>.step</code>/<code>.stp</code> (solid bodies only; parses client-side in ~30–60s for large boards).
       </p>
-      <p class="dim subtle">Generate a rich GLB with <code>kicad-cli pcb export glb --include-tracks --include-pads --include-zones --include-silkscreen --include-soldermask --fuse-shapes</code>.</p>
+      <p class="dim subtle">Generate a rich GLB with:</p>
+      <code class="cmd">kicad-cli pcb export glb --include-tracks --include-pads --include-zones --include-silkscreen --include-soldermask --fuse-shapes</code>
       <label class="btn">Pick 3D file
         <input type="file" accept=".glb,.gltf,.step,.stp" hidden onchange={onModelPick} />
       </label>
@@ -525,7 +526,14 @@
     from { transform: translateX(-100%); }
     to   { transform: translateX(340%); }
   }
-  .subtle { font-size: 0.7rem; opacity: 0.7; margin-top: 0.3rem; max-width: 420px; overflow-wrap: break-word; }
+  .subtle { font-size: 0.7rem; opacity: 0.7; margin-top: 0.3rem; }
+  .cmd {
+    display: block; margin-top: 0.4rem;
+    padding: 0.4rem 0.7rem; border-radius: 6px;
+    background: var(--kv-surface); color: var(--kv-text-dim);
+    font-size: 0.65rem; white-space: nowrap;
+    max-width: min(90vw, 560px); overflow-x: auto;
+  }
   .dim { color: var(--kv-text-dim); font-size: 0.85rem; }
   .btn {
     display: inline-block; margin-top: 0.75rem;
