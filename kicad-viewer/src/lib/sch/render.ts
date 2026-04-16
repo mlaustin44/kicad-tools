@@ -227,7 +227,7 @@ function tbText(
   const op = opts.dim ? ' opacity="0.65"' : '';
   return (
     `<text x="${fmt(x)}" y="${fmt(y)}" font-size="${fmt(opts.size)}" ` +
-    `fill="currentColor"${weight}${op}>${escapeText(text)}</text>`
+    `fill="currentColor"${weight}${op}>${renderMarkupSvg(text)}</text>`
   );
 }
 
@@ -329,7 +329,7 @@ function renderTextBox(tb: TextBox): string {
     bg +
     `<text x="${fmt(tx)}" y="${fmt(ty)}" ` +
     `font-size="${fmt(tb.effects?.font?.size?.y ?? 1.27)}" ` +
-    `fill="currentColor">${escapeText(text)}</text>`
+    `fill="currentColor">${renderMarkupSvg(text)}</text>`
   );
 }
 
@@ -347,7 +347,7 @@ function renderTextNode(t: Text, _kind: 'text' | 'libtext'): string {
   return (
     `<text x="${fmt(p.x)}" y="${fmt(p.y)}" font-size="${fmt(size)}" ` +
     `text-anchor="${anchor}" dominant-baseline="${baseline}"${weight}` +
-    ` fill="currentColor"${transform}>${escapeText(text)}</text>`
+    ` fill="currentColor"${transform}>${renderMarkupSvg(text)}</text>`
   );
 }
 
@@ -428,7 +428,7 @@ function renderNetLabel(lbl: NetLabel): string {
   return (
     `<text x="${fmt(p.x)}" y="${fmt(p.y - 0.3)}" font-size="${fmt(size)}" ` +
     `text-anchor="${anchor}" data-net="${escapeAttr(text)}" ` +
-    `fill="currentColor"${weight}${transform}>${escapeText(text)}</text>`
+    `fill="currentColor"${weight}${transform}>${renderMarkupSvg(text)}</text>`
   );
 }
 
@@ -472,7 +472,7 @@ function renderShapedLabel(
     `<polygon points="${poly}" fill="none" stroke="currentColor" stroke-width="${fmt(0.15)}"/>` +
     `<text x="${fmt(textOffsetX)}" y="${fmt(dy)}" font-size="${fmt(size)}" ` +
     `text-anchor="${anchor === 'end' ? 'start' : 'start'}" ` +
-    `fill="currentColor"${weight}${transform === '' ? '' : ''}>${escapeText(text)}</text>` +
+    `fill="currentColor"${weight}${transform === '' ? '' : ''}>${renderMarkupSvg(text)}</text>` +
     `</g>`
   );
 }
@@ -749,7 +749,7 @@ function renderPinTextWorld(
       `<g transform="translate(${fmt(nx)} ${fmt(ny)}) rotate(${fmt(glyphRot)})">` +
       `<text x="0" y="0" font-size="${fmt(nameSize)}" text-anchor="${nameAnchor}" ` +
       `dominant-baseline="middle" fill="currentColor">` +
-      escapeText(pin.name.text) +
+      renderMarkupSvg(pin.name.text) +
       `</text></g>`
     );
   }
@@ -768,7 +768,7 @@ function renderPinTextWorld(
       `<g transform="translate(${fmt(mx + perpX)} ${fmt(my + perpY)}) rotate(${fmt(glyphRot)})">` +
       `<text x="0" y="0" font-size="${fmt(numSize * 0.85)}" text-anchor="middle" ` +
       `dominant-baseline="alphabetic" fill="currentColor" opacity="0.85">` +
-      escapeText(pin.number.text) +
+      renderMarkupSvg(pin.number.text) +
       `</text></g>`
     );
   }
@@ -824,7 +824,7 @@ function renderSymbolProperties(sym: SchematicSymbol): string {
       `<text x="${fmt(p.x)}" y="${fmt(p.y)}" class="${cls}" ` +
       `font-size="${fmt(size)}" text-anchor="${anchor}" ` +
       `dominant-baseline="${baseline}"${weight} fill="currentColor"${transform}>` +
-      escapeText(text) +
+      renderMarkupSvg(text) +
       `</text>`
     );
   }
@@ -939,7 +939,7 @@ function renderLibText(t: Text): string {
   return (
     `<g${transform}><text x="0" y="0" font-size="${fmt(size)}" ` +
     `text-anchor="${anchor}" dominant-baseline="${baseline}"${weight} ` +
-    `fill="currentColor">${escapeText(text)}</text></g>`
+    `fill="currentColor">${renderMarkupSvg(text)}</text></g>`
   );
 }
 
@@ -1019,7 +1019,7 @@ function renderSheetPin(pin: SchematicSheetPin): string {
     `transform="translate(${fmt(p.x)} ${fmt(p.y)})${polyRotate(rot)}">` +
     `<polygon points="${pts}" fill="none" stroke="currentColor" stroke-width="${fmt(0.15)}"/>` +
     `<text x="${fmt(tip + size * 0.4)}" y="${fmt(size * 0.35)}" font-size="${fmt(size)}" ` +
-    `text-anchor="start" fill="currentColor">${escapeText(text)}</text>` +
+    `text-anchor="start" fill="currentColor">${renderMarkupSvg(text)}</text>` +
     `</g>`
   );
 }
@@ -1176,6 +1176,39 @@ function escapeAttr(s: string): string {
 }
 function escapeText(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+// --- markup → SVG tspan conversion ---
+// KiCad text uses ^{super}, _{sub}, ~{overbar} markup. The parser already has
+// a Markup class that tokenizes this into a tree; we just need to walk it and
+// produce <tspan> elements.
+
+import { Markup, type MarkupNode } from '$lib/parser/text/markup';
+
+function renderMarkupSvg(text: string): string {
+  // Fast path: no markup characters → skip parsing overhead.
+  if (!text.includes('^{') && !text.includes('_{') && !text.includes('~{')) {
+    return escapeText(text);
+  }
+  const m = new Markup(text);
+  return walkMarkupNode(m.root);
+}
+
+function walkMarkupNode(node: MarkupNode): string {
+  if (node.text && !node.children.length) {
+    const esc = escapeText(node.text);
+    if (node.superscript) return `<tspan dy="-0.4em" font-size="70%">${esc}</tspan><tspan dy="0.4em" font-size="100%"></tspan>`;
+    if (node.subscript)   return `<tspan dy="0.3em" font-size="70%">${esc}</tspan><tspan dy="-0.3em" font-size="100%"></tspan>`;
+    if (node.overbar)     return `<tspan text-decoration="overline">${esc}</tspan>`;
+    return esc;
+  }
+  let inner = '';
+  for (const c of node.children) inner += walkMarkupNode(c);
+  if (node.is_root || (!node.superscript && !node.subscript && !node.overbar)) return inner;
+  if (node.superscript) return `<tspan dy="-0.4em" font-size="70%">${inner}</tspan><tspan dy="0.4em" font-size="100%"></tspan>`;
+  if (node.subscript)   return `<tspan dy="0.3em" font-size="70%">${inner}</tspan><tspan dy="-0.3em" font-size="100%"></tspan>`;
+  if (node.overbar)     return `<tspan text-decoration="overline">${inner}</tspan>`;
+  return inner;
 }
 
 // Silence unused-var warnings for helpers exported only for types.
