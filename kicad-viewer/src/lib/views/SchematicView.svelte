@@ -3,6 +3,7 @@
   import { project, sheetsByUuid, componentsByUuid } from '$lib/stores/project';
   import { selectComponent, selection, clearSelection } from '$lib/stores/selection';
   import { buildSheetSvg } from '$lib/sch/render';
+  import { resolveTextOverlaps } from '$lib/sch/text-collision';
   import Breadcrumb from '$lib/ui/Breadcrumb.svelte';
   import ContextMenu from '$lib/ui/ContextMenu.svelte';
 
@@ -204,6 +205,16 @@
   // when the sheet just swapped.
   $effect(() => {
     if (activeSheet) requestAnimationFrame(frame);
+  });
+
+  // Post-render collision resolution: nudge text away from overlapping symbol
+  // bodies. Runs after the SVG is committed to the DOM.
+  $effect(() => {
+    if (!svg || !host) return;
+    requestAnimationFrame(() => {
+      const svgWrap = host?.querySelector('.svg');
+      if (svgWrap) resolveTextOverlaps(svgWrap as HTMLElement);
+    });
   });
 
   // Cross-probe when the selection changes while this view is mounted.
