@@ -423,7 +423,8 @@ function renderNetLabel(lbl: NetLabel): string {
   if (!text) return '';
   const rot = lbl.at?.rotation ?? 0;
   const { size, weight } = effectsAttrs(lbl.effects);
-  const { anchor, transform } = labelOrientation(p.x, p.y, rot);
+  const justify = lbl.effects?.justify;
+  const { anchor, transform } = labelOrientation(p.x, p.y, rot, justify);
   // NetLabel anchored just above the wire point.
   return (
     `<text x="${fmt(p.x)}" y="${fmt(p.y - 0.3)}" font-size="${fmt(size)}" ` +
@@ -459,7 +460,7 @@ function renderShapedLabel(
     : hierLabelPoints(shape, w, h, tip);
   const poly = pts.map(([x, y]) => `${fmt(x)},${fmt(y)}`).join(' ');
 
-  const { anchor, transform } = labelOrientation(p.x, p.y, rot);
+  const { anchor, transform } = labelOrientation(p.x, p.y, rot, lbl.effects?.justify);
   // For hierarchical sheet pins / hier-labels and global labels, the text sits
   // inside the polygon: offset from the pin side.
   const textOffsetX = tip + padX;
@@ -540,10 +541,21 @@ function hierLabelPoints(shape: string, w: number, h: number, tip: number): Arra
   return globalLabelPoints(shape, w, h, tip);
 }
 
-function labelOrientation(_x: number, _y: number, rot: number): { anchor: 'start' | 'end'; transform: string } {
+function labelOrientation(
+  _x: number,
+  _y: number,
+  rot: number,
+  justify?: { horizontal?: string; vertical?: string }
+): { anchor: 'start' | 'end'; transform: string } {
   const r = ((rot % 360) + 360) % 360;
-  // Orientation reflected in the outer group rotate; text just goes left-to-right within.
-  return { anchor: r === 180 ? 'end' : 'start', transform: '' };
+  // KiCad net labels use rotation to indicate the wire-connection direction and
+  // justify to control which way text extends from the pin. We need to honour
+  // both to avoid text running into the symbol body.
+  if (justify?.horizontal === 'right') return { anchor: 'end', transform: '' };
+  if (justify?.horizontal === 'left') return { anchor: 'start', transform: '' };
+  // Fallback to rotation-based heuristic when justify isn't explicit.
+  if (r === 180 || r === 270) return { anchor: 'end', transform: '' };
+  return { anchor: 'start', transform: '' };
 }
 
 // ---------- symbols (components + power) ----------
