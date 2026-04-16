@@ -12,6 +12,11 @@ export async function loadProject(
     return loadFromZipFile(input);
   }
   if (input instanceof FileList || Array.isArray(input)) {
+    const arr = Array.from(input as FileList | File[]);
+    // Single zip file in a FileList — unpack it rather than treating it as a raw file.
+    if (arr.length === 1 && /\.zip$/i.test(arr[0]!.name)) {
+      return loadFromZipFile(arr[0]!);
+    }
     return loadFromFileList(input as FileList | File[]);
   }
   if (input instanceof File) {
