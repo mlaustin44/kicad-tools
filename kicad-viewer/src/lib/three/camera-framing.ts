@@ -10,9 +10,10 @@ export interface FrameResult {
 /**
  * Compute a camera pose that frames a world-space AABB for a component.
  *
- * Sizing: padded to at least MIN_FRAME_MM so a 0402 doesn't turn into
- * a 100× zoom. Distance derived from the perspective FOV + largest padded
- * dimension, then a breathing-room factor.
+ * Sizing: padded to at least `sceneMaxDim * 0.12` so tiny components don't
+ * zoom to absurdity. sceneMaxDim keeps this unit-agnostic: whether the model
+ * is in mm (STEP after rotation) or meters (glTF/GLB convention), the camera
+ * distance scales to the actual scene.
  *
  * Direction: a 3/4 iso-ish angle that flips below the board for bottom-side
  * parts so they're actually visible.
@@ -21,15 +22,16 @@ export function computeComponentFrame(
   bboxMin: THREE.Vector3,
   bboxMax: THREE.Vector3,
   fovDegrees: number,
-  side: 'top' | 'bottom'
+  side: 'top' | 'bottom',
+  sceneMaxDim: number = 100
 ): FrameResult {
-  const MIN_FRAME_MM = 15;
+  const MIN_CONTEXT = sceneMaxDim * 0.12;
   const BREATHING_FACTOR = 1.2;
 
   const center = new THREE.Vector3().addVectors(bboxMin, bboxMax).multiplyScalar(0.5);
   const size = new THREE.Vector3().subVectors(bboxMax, bboxMin);
   const maxDim = Math.max(size.x, size.y, size.z);
-  const padded = Math.max(maxDim, MIN_FRAME_MM);
+  const padded = Math.max(maxDim, MIN_CONTEXT);
 
   const fovRad = (fovDegrees * Math.PI) / 180;
   const halfPadded = padded / 2;

@@ -68,7 +68,6 @@
     if (!c) return;
     if (activeSheet !== c.sheetUuid) activeSheet = c.sheetUuid;
     if (s.source === 'search' && tab !== 'sch' && tab !== 'split') tab = 'sch';
-    if (s.source === 'panel' && tab !== 'sch' && tab !== 'split' && tab !== '3d') tab = 'sch';
   });
 
   onMount(() => {

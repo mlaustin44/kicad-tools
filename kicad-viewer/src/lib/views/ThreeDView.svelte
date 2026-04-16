@@ -263,12 +263,27 @@
             message: '3D model loaded, but no components were matched to refdes — picking disabled.'
           });
         }
+        // Debug: expose camera/controls for Playwright diagnostics.
+        const _camera = camera;
+        const _controls = controls;
+        const _refdesToMesh = refdesToMesh;
+        const _currentModelGroup = currentModelGroup;
         // Debug hook for Playwright: exposes a stable surface for asserting
         // that refdes matching worked and computing screen-space coordinates
         // of a specific refdes so tests can dispatch real clicks.
         (globalThis as unknown as { __kv3d?: unknown }).__kv3d = {
           refdesCount: refdesToMesh.size,
           refdesList: Array.from(refdesToMesh.keys()),
+          getCameraState(): unknown {
+            if (!_camera || !_controls) return null;
+            return {
+              pos: [_camera.position.x, _camera.position.y, _camera.position.z],
+              target: [_controls.target.x, _controls.target.y, _controls.target.z],
+              near: _camera.near,
+              far: _camera.far,
+              fov: _camera.fov
+            };
+          },
           screenPosFor(refdes: string): { x: number; y: number } | null {
             const obj = refdesToMesh.get(refdes);
             if (!obj || !camera || !canvas) return null;
@@ -416,11 +431,14 @@
     if (box.isEmpty()) return;
     const side: 'top' | 'bottom' = comp.side === 'bottom' ? 'bottom' : 'top';
     untrack(() => {
-      if (!controls || !camera) return;
-      const frame = computeComponentFrame(box.min, box.max, camera.fov, side);
+      if (!controls || !camera || !currentModelGroup) return;
+      const sceneBox = new THREE.Box3().setFromObject(currentModelGroup);
+      const sceneSize = sceneBox.getSize(new THREE.Vector3());
+      const sceneMaxDim = Math.max(sceneSize.x, sceneSize.y, sceneSize.z) || 1;
+      const frame = computeComponentFrame(box.min, box.max, camera.fov, side, sceneMaxDim);
       controls.target.copy(frame.target);
       camera.position.copy(frame.position);
-      camera.lookAt(frame.target);
+      adjustCameraClipping(sceneBox);
       controls.update();
     });
   });

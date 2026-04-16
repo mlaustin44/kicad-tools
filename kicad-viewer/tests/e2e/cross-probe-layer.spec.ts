@@ -63,7 +63,9 @@ test('cross-probe: selecting in PCB centers the part in Schematic on next visit'
   const j1Btn = page.locator('.item', { has: page.locator('.refdes', { hasText: /^J1$/ }) }).first();
   await j1Btn.click();
 
-  // Selecting from the components panel auto-switches to Schematic. Wait for it.
+  // Panel clicks no longer auto-switch tabs. Navigate to Schematic manually
+  // to verify the sheet was prepped and J1 is centered.
+  await page.getByRole('tab', { name: 'Schematic' }).first().click();
   const j1 = page.locator('[data-refdes="J1"]').first();
   await expect(j1).toBeVisible({ timeout: 5_000 });
   // Give the rAF-deferred cross-probe zoom time to commit.
