@@ -129,8 +129,8 @@
       powerPreference: 'high-performance'
     });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
-    renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.1;
+    renderer.toneMapping = THREE.LinearToneMapping;
+    renderer.toneMappingExposure = 0.65;
 
     controls = new OrbitControls(camera, canvas);
     controls.enableDamping = true;
@@ -142,13 +142,11 @@
     const pmrem = new THREE.PMREMGenerator(renderer);
     scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
 
-    scene.add(new THREE.AmbientLight(0xffffff, 0.6));
-    const key = new THREE.DirectionalLight(0xffffff, 1.4);
+    // Environment map handles ambient/diffuse. Keep direct lights minimal —
+    // just enough for specular highlights and a subtle fill.
+    const key = new THREE.DirectionalLight(0xffffff, 0.6);
     key.position.set(100, 200, 100);
     scene.add(key);
-    const fill = new THREE.DirectionalLight(0xc0d4ff, 0.4);
-    fill.position.set(-120, -40, -80);
-    scene.add(fill);
 
     const ro = new ResizeObserver(() => resize());
     ro.observe(host);
@@ -354,33 +352,40 @@
     if (presetRequested) goToPreset(presetRequested);
   });
 
-  // Tracks the emissive highlight we apply to selected components so we can
-  // undo it on the next selection. Map<Material, originalEmissive>.
-  const highlightedMaterials = new Map<THREE.MeshStandardMaterial, THREE.Color>();
+  // Tracks per-mesh material swaps so clearHighlight restores the original
+  // shared material and disposes the cloned tinted copy. GLTFLoader shares
+  // material instances across meshes — mutating them in-place would light up
+  // every capacitor when you click one.
+  const highlightedMeshes = new Map<THREE.Mesh, THREE.Material | THREE.Material[]>();
   const HIGHLIGHT_COLOR = new THREE.Color(0x4a90e2);
 
   function clearHighlight(): void {
-    for (const [mat, original] of highlightedMaterials) {
-      mat.emissive.copy(original);
-      mat.emissiveIntensity = 0;
+    for (const [mesh, origMat] of highlightedMeshes) {
+      const cloned = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+      for (const c of cloned) c.dispose();
+      mesh.material = origMat;
     }
-    highlightedMaterials.clear();
+    highlightedMeshes.clear();
+  }
+
+  function tintMaterial(m: THREE.Material): THREE.Material {
+    const clone = m.clone();
+    const std = clone as THREE.MeshStandardMaterial;
+    if (std.emissive) {
+      std.emissive.copy(HIGHLIGHT_COLOR);
+      std.emissiveIntensity = 0.6;
+    }
+    return clone;
   }
 
   function applyHighlight(obj: THREE.Object3D): void {
     obj.traverse((o) => {
       const mesh = o as THREE.Mesh;
       if (!mesh.isMesh) return;
-      const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-      for (const m of mats) {
-        const std = m as THREE.MeshStandardMaterial;
-        if (!std || !std.emissive) continue;
-        if (!highlightedMaterials.has(std)) {
-          highlightedMaterials.set(std, std.emissive.clone());
-        }
-        std.emissive.copy(HIGHLIGHT_COLOR);
-        std.emissiveIntensity = 0.7;
-      }
+      highlightedMeshes.set(mesh, mesh.material);
+      mesh.material = Array.isArray(mesh.material)
+        ? mesh.material.map(tintMaterial)
+        : tintMaterial(mesh.material);
     });
   }
 
