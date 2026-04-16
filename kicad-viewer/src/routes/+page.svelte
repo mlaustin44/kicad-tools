@@ -64,8 +64,9 @@
     color: var(--kv-text-dim); max-width: 52ch; line-height: 1.55;
     margin: 0 0 1.5rem;
   }
-  .hero a { color: var(--kv-accent); text-decoration: none; }
-  .hero a:hover { text-decoration: underline; }
+  .hero a { color: var(--kv-accent); text-decoration: underline; }
+  .hero a:hover { opacity: 0.8; }
+  .hero a code { color: var(--kv-accent); }
   .privacy { font-size: 0.85rem; opacity: 0.75; }
   .hero code {
     background: var(--kv-surface-2); padding: 0.1em 0.35em;

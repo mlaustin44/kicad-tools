@@ -90,8 +90,12 @@
     color: var(--kv-text-dim);
   }
   .drop.active { border-color: var(--kv-accent); background: var(--kv-surface-2); }
-  .drop a { color: var(--kv-accent); text-decoration: none; }
-  .drop a:hover { text-decoration: underline; }
+  .drop a { color: var(--kv-accent); text-decoration: underline; }
+  .drop a:hover { opacity: 0.8; }
+  .drop code {
+    background: var(--kv-surface-2); padding: 0.1em 0.35em;
+    border-radius: 4px; font-size: 0.9em; color: var(--kv-text);
+  }
   .privacy { font-size: 0.8rem; opacity: 0.7; margin-top: 0.5rem; }
   .row { display: flex; gap: 0.75rem; margin-top: 0.5rem; }
   .btn {
