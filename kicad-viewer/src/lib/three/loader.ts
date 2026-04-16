@@ -124,6 +124,16 @@ function optimizeForRender(root: Object3D): void {
     m.removeFromParent();
     m.geometry.dispose();
   }
+
+  // Fix transparent-layer stacking. KiCad GLBs have silkscreen and soldermask
+  // both alpha-blended. They're nearly coplanar so three.js's centroid-based
+  // transparent sort is unstable. Force silkscreen to render AFTER soldermask
+  // so white text isn't painted over by semi-transparent green.
+  root.traverse((obj) => {
+    const n = obj.name.toLowerCase();
+    if (n.includes('silkscreen') || n.includes('silk')) obj.renderOrder = 2;
+    else if (n.includes('soldermask') || n.includes('mask')) obj.renderOrder = 1;
+  });
 }
 
 /** Build refdes -> Object3D map from named nodes.

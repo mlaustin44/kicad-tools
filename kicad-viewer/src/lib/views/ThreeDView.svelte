@@ -130,8 +130,7 @@
       powerPreference: 'high-performance'
     });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
-    renderer.toneMapping = THREE.LinearToneMapping;
-    renderer.toneMappingExposure = 0.65;
+    renderer.toneMapping = THREE.NoToneMapping;
 
     controls = new OrbitControls(camera, canvas);
     controls.enableDamping = true;
