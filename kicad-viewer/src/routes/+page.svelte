@@ -36,7 +36,7 @@
     </nav>
   </section>
 
-  <footer class="credit">Built by Matthew Austin, 2026</footer>
+  <footer class="credit">Built by Matthew Austin, 2026 · Licensed under <a href="https://github.com/mlaustin44/kicad-tools/tree/main/kicad-viewer/LICENSE" target="_blank" rel="noopener">AGPLv3</a></footer>
 </main>
 
 <style>
@@ -80,4 +80,6 @@
   .btn-primary { background: var(--kv-text); color: var(--kv-bg); border-color: var(--kv-text); }
   .btn-secondary { background: var(--kv-surface); color: var(--kv-text); }
   .credit { font-size: 0.75rem; color: var(--kv-text-dim); padding-top: 2rem; }
+  .credit a { color: var(--kv-text-dim); text-decoration: underline; }
+  .credit a:hover { color: var(--kv-text); }
 </style>
