@@ -1,0 +1,272 @@
+<script lang="ts">
+  import { untrack } from 'svelte';
+  import { project, sheetsByUuid, componentsByUuid } from '$lib/stores/project';
+  import { selectComponent, selection, clearSelection } from '$lib/stores/selection';
+  import { buildSheetSvg } from '$lib/sch/render';
+  import Breadcrumb from '$lib/ui/Breadcrumb.svelte';
+  import ContextMenu from '$lib/ui/ContextMenu.svelte';
+
+  interface Props {
+    activeSheetUuid: string | null;
+    onNavigateSheet?: (uuid: string) => void;
+    fitRequested?: number;
+    panPulse?: { dx: number; dy: number; seq: number };
+    zoomPulse?: { factor: number; seq: number };
+  }
+  let { activeSheetUuid, onNavigateSheet, fitRequested = 0, panPulse, zoomPulse }: Props = $props();
+
+  let activeSheet = $derived($sheetsByUuid.get(activeSheetUuid ?? '') ?? null);
+
+  let viewport = $state({ x: 0, y: 0, scale: 1 });
+  let host: HTMLDivElement | undefined = $state();
+
+  function onWheel(e: WheelEvent) {
+    e.preventDefault();
+    if (!host) return;
+    const delta = -e.deltaY * 0.001;
+    const factor = Math.exp(delta);
+    const rect = host.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+    viewport = {
+      x: mx - (mx - viewport.x) * factor,
+      y: my - (my - viewport.y) * factor,
+      scale: viewport.scale * factor
+    };
+  }
+
+  let dragging = $state(false);
+  let lastX = 0, lastY = 0;
+
+  function onDown(e: PointerEvent) {
+    if (e.button === 1) {
+      // Middle-click: pan regardless of target. Prevent default to stop auto-scroll cursor.
+      e.preventDefault();
+      dragging = true;
+      lastX = e.clientX; lastY = e.clientY;
+      host?.setPointerCapture(e.pointerId);
+      return;
+    }
+    if (e.button !== 0) return;
+    const t = e.target as Element;
+    if (t.closest('[data-refdes]')) return;  // left-click on symbol = select, not pan
+    dragging = true;
+    lastX = e.clientX; lastY = e.clientY;
+    host?.setPointerCapture(e.pointerId);
+  }
+
+  function onMove(e: PointerEvent) {
+    if (!dragging) return;
+    viewport = { ...viewport, x: viewport.x + (e.clientX - lastX), y: viewport.y + (e.clientY - lastY) };
+    lastX = e.clientX; lastY = e.clientY;
+  }
+
+  function onUp() { dragging = false; }
+
+  function onClick(e: MouseEvent) {
+    const g = (e.target as Element).closest('[data-refdes]');
+    if (!g) {
+      clearSelection();
+      return;
+    }
+    const uuid = g.getAttribute('data-uuid');
+    if (uuid) selectComponent({ uuid, source: 'sch' });
+  }
+
+  let ctxMenu = $state<{ open: boolean; x: number; y: number; refdes: string | null }>({
+    open: false, x: 0, y: 0, refdes: null
+  });
+
+  function onContextMenu(e: MouseEvent) {
+    e.preventDefault();
+    const g = (e.target as Element).closest('[data-refdes]');
+    const refdes = g?.getAttribute('data-refdes') ?? null;
+    ctxMenu = { open: true, x: e.clientX, y: e.clientY, refdes };
+  }
+
+  let menuItems = $derived.by(() => {
+    const items: Array<{ label: string; action: () => void }> = [
+      { label: 'Fit view', action: () => fit() },
+      { label: 'Clear selection', action: () => clearSelection() }
+    ];
+    if (ctxMenu.refdes) {
+      const r = ctxMenu.refdes;
+      items.push({
+        label: `Copy refdes (${r})`,
+        action: () => { navigator.clipboard?.writeText(r).catch(() => {}); }
+      });
+    }
+    return items;
+  });
+
+  function onDblClick(e: MouseEvent) {
+    const sg = (e.target as Element).closest('[data-sheet-uuid]');
+    if (!sg) return;
+    const uuid = sg.getAttribute('data-sheet-uuid');
+    if (uuid) onNavigateSheet?.(uuid);
+  }
+
+  let svg = $derived.by(() => {
+    if (!$project || !activeSheetUuid) return '';
+    const s = $sheetsByUuid.get(activeSheetUuid);
+    return s ? buildSheetSvg($project, s) : '';
+  });
+
+  let highlightedRefdes = $derived.by(() => {
+    if ($selection?.kind !== 'component') return null;
+    const c = $project?.components.find((c) => c.uuid === $selection.uuid);
+    return c?.refdes ?? null;
+  });
+
+  let highlightedNet = $derived($selection?.kind === 'net' ? $selection.name : null);
+
+  function fit() {
+    if (!host || !activeSheet) return;
+    const rect = host.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return;
+    const b = activeSheet.boundsMm;
+    if (b.w <= 0 || b.h <= 0) return;
+    // Inner .svg is 800x600 — center the box in the host and scale to fit.
+    const s = Math.min(rect.width / 800, rect.height / 600) * 0.95;
+    viewport = {
+      x: (rect.width - 800 * s) / 2,
+      y: (rect.height - 600 * s) / 2,
+      scale: s
+    };
+  }
+
+  $effect(() => {
+    if (fitRequested > 0) fit();
+  });
+
+  let lastPanSeq = 0;
+  $effect(() => {
+    if (!panPulse || panPulse.seq === lastPanSeq) return;
+    lastPanSeq = panPulse.seq;
+    viewport = { ...viewport, x: viewport.x + panPulse.dx, y: viewport.y + panPulse.dy };
+  });
+
+  let lastZoomSeq = 0;
+  $effect(() => {
+    if (!zoomPulse || zoomPulse.seq === lastZoomSeq || !host) return;
+    lastZoomSeq = zoomPulse.seq;
+    const rect = host.getBoundingClientRect();
+    const mx = rect.width / 2;
+    const my = rect.height / 2;
+    const factor = zoomPulse.factor;
+    viewport = {
+      x: mx - (mx - viewport.x) * factor,
+      y: my - (my - viewport.y) * factor,
+      scale: viewport.scale * factor
+    };
+  });
+
+  // Framing logic: either fit the whole sheet, or cross-probe zoom to the
+  // selected component. Merged so the two can't race — prior bug was auto-fit
+  // landing after cross-probe and clobbering its zoom.
+  function crossProbeZoom(uuid: string): boolean {
+    if (!host) return false;
+    const el = host.querySelector(`[data-uuid="${uuid.replace(/"/g, '\\"')}"]`);
+    if (!el) return false;
+    const bbox = (el as SVGGraphicsElement).getBoundingClientRect();
+    const stageBox = host.getBoundingClientRect();
+    if (stageBox.width === 0 && stageBox.height === 0) return false;
+    const vp = untrack(() => viewport);
+    const naturalW = Math.max(bbox.width / vp.scale, 1);
+    const naturalH = Math.max(bbox.height / vp.scale, 1);
+    const elCenterX = (bbox.left + bbox.width / 2 - stageBox.left - vp.x) / vp.scale;
+    const elCenterY = (bbox.top + bbox.height / 2 - stageBox.top - vp.y) / vp.scale;
+    const shortDim = Math.min(stageBox.width, stageBox.height);
+    const elLargest = Math.max(naturalW, naturalH);
+    const rawScale = (shortDim * 0.25) / elLargest;
+    const targetScale = Math.max(0.3, Math.min(8, rawScale));
+    viewport = {
+      x: stageBox.width / 2 - elCenterX * targetScale,
+      y: stageBox.height / 2 - elCenterY * targetScale,
+      scale: targetScale
+    };
+    return true;
+  }
+
+  function frame() {
+    // If the current selection is a cross-probed component on this sheet,
+    // zoom to it. Otherwise fit the whole sheet.
+    const s = untrack(() => $selection);
+    if (s?.kind === 'component' && s.source !== 'sch') {
+      const c = untrack(() => $componentsByUuid.get(s.uuid));
+      if (c && c.sheetUuid === activeSheetUuid && crossProbeZoom(c.uuid)) return;
+    }
+    fit();
+  }
+
+  // Auto-frame on sheet change. requestAnimationFrame defers until after Svelte
+  // has committed the new SVG — querying bboxes in a microtask is too early
+  // when the sheet just swapped.
+  $effect(() => {
+    if (activeSheet) requestAnimationFrame(frame);
+  });
+
+  // Cross-probe when the selection changes while this view is mounted.
+  $effect(() => {
+    const s = $selection;
+    if (!s || s.source === 'sch' || s.kind !== 'component') return;
+    const c = $componentsByUuid.get(s.uuid);
+    if (!c || c.sheetUuid !== activeSheetUuid) return;
+    requestAnimationFrame(() => crossProbeZoom(c.uuid));
+  });
+</script>
+
+<!-- svelte-ignore a11y_click_events_have_key_events -->
+<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+<div
+  class="stage schematic-stage"
+  class:dragging
+  bind:this={host}
+  onwheel={onWheel}
+  onpointerdown={onDown}
+  onpointermove={onMove}
+  onpointerup={onUp}
+  onauxclick={(e) => { if (e.button === 1) e.preventDefault(); }}
+  onclick={onClick}
+  ondblclick={onDblClick}
+  oncontextmenu={onContextMenu}
+  role="img"
+  aria-label="Schematic view"
+>
+  <div class="svg" style="transform: translate({viewport.x}px, {viewport.y}px) scale({viewport.scale});">
+    {@html svg}
+  </div>
+  {#if highlightedRefdes}
+    {@html `<style>.schematic-stage [data-refdes="${CSS.escape(highlightedRefdes)}"] .sch-hitbox { stroke: var(--kv-accent); stroke-width: 0.35; stroke-dasharray: 0.6 0.3; }</style>`}
+  {/if}
+  {#if highlightedNet}
+    {@html `<style>.schematic-stage [data-net="${CSS.escape(highlightedNet)}"] { fill: var(--kv-accent); font-weight: 700; }</style>`}
+  {/if}
+  {#if activeSheet}
+    <Breadcrumb sheet={activeSheet} />
+  {/if}
+</div>
+
+<ContextMenu
+  open={ctxMenu.open}
+  x={ctxMenu.x}
+  y={ctxMenu.y}
+  items={menuItems}
+  onClose={() => (ctxMenu = { ...ctxMenu, open: false })}
+/>
+
+<style>
+  .stage {
+    position: relative; overflow: hidden;
+    width: 100%; height: 100%;
+    background: var(--kv-sch-bg);
+    cursor: grab; touch-action: none;
+    user-select: none; -webkit-user-select: none;
+  }
+  .stage.dragging { cursor: grabbing; }
+  .svg {
+    position: absolute; top: 0; left: 0;
+    transform-origin: 0 0;
+    width: 800px; height: 600px;
+  }
+</style>

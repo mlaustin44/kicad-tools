@@ -1,0 +1,12 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "kicad-viewer",
+  "compatibility_date": "2025-04-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "main": ".svelte-kit/cloudflare/_worker.js",
+  "assets": {
+    "directory": ".svelte-kit/cloudflare",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application"
+  }
+}
