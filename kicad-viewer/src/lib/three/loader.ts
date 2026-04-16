@@ -127,23 +127,14 @@ function optimizeForRender(root: Object3D): void {
 
   // Fix transparent-layer stacking. KiCad GLBs have silkscreen and soldermask
   // both alpha-blended and nearly coplanar. three.js's centroid-based
-  // transparent sort is unstable; transparent meshes also don't depth-write,
-  // so they paint over opaque component bodies that rendered earlier.
-  //
-  // Render order: copper/board (0) → soldermask (1) → silkscreen (2)
-  //               → components (3) so they're never occluded by transparent layers.
-  const REFDES_RE2 = /^[A-Z]+\d+/;
+  // transparent sort is unstable — force silkscreen to render AFTER soldermask
+  // so white text isn't painted over by semi-transparent green.
+  // Components stay at default renderOrder (0) and rely on depth testing
+  // against the transparent layers (which don't depth-write).
   root.traverse((obj) => {
     const n = obj.name.toLowerCase();
-    if (n.includes('silkscreen') || n.includes('silk')) {
-      obj.renderOrder = 2;
-    } else if (n.includes('soldermask') || n.includes('mask')) {
-      obj.renderOrder = 1;
-    } else if (obj.name && REFDES_RE2.test(obj.name)) {
-      // Component group — render after transparent board layers.
-      obj.renderOrder = 3;
-      obj.traverse((child) => { child.renderOrder = 3; });
-    }
+    if (n.includes('silkscreen') || n.includes('silk')) obj.renderOrder = 2;
+    else if (n.includes('soldermask') || n.includes('mask')) obj.renderOrder = 1;
   });
 }
 
