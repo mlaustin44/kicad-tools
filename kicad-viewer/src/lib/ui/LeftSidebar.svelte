@@ -13,16 +13,26 @@
   let { view, activeSheet, onSelectSheet }: Props = $props();
 
   const firstLabel = $derived(view === 'sch' ? 'Pages' : 'Layers');
+  const showFirstTab = $derived(view !== '3d');
+
+  // Auto-switch away from Layers tab when it's hidden in 3D view
+  $effect(() => {
+    if (!showFirstTab && $leftSidebarTab === 0) {
+      leftSidebarTab.set(1);
+    }
+  });
 </script>
 
 <div class="wrap">
-  <div class="tabs" role="tablist">
-    <button
-      role="tab"
-      aria-selected={$leftSidebarTab === 0}
-      class:active={$leftSidebarTab === 0}
-      onclick={() => leftSidebarTab.set(0)}
-    >{firstLabel}</button>
+  <div class="tabs" class:two-tabs={!showFirstTab} role="tablist">
+    {#if showFirstTab}
+      <button
+        role="tab"
+        aria-selected={$leftSidebarTab === 0}
+        class:active={$leftSidebarTab === 0}
+        onclick={() => leftSidebarTab.set(0)}
+      >{firstLabel}</button>
+    {/if}
     <button
       role="tab"
       aria-selected={$leftSidebarTab === 1}
@@ -39,7 +49,7 @@
   <div class="pane">
     {#if $leftSidebarTab === 0 && view === 'sch'}
       <div class="scroll"><SheetTree activeUuid={activeSheet} onSelect={onSelectSheet} /></div>
-    {:else if $leftSidebarTab === 0}
+    {:else if $leftSidebarTab === 0 && view === 'pcb'}
       <div class="scroll"><LayerPanel /></div>
     {:else if $leftSidebarTab === 1}
       <NetsPanel />
@@ -57,6 +67,9 @@
   .tabs {
     display: grid; grid-template-columns: 1fr 1fr 1fr;
     border-bottom: 1px solid var(--kv-border);
+  }
+  .tabs.two-tabs {
+    grid-template-columns: 1fr 1fr;
   }
   .tabs button {
     background: transparent; border: none; color: var(--kv-text-dim);

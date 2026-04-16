@@ -68,7 +68,7 @@
           <button
             class="item"
             class:active={$selection?.kind === 'component' && $selection.uuid === c.uuid}
-            onclick={() => selectComponent({ uuid: c.uuid, source: 'search' })}
+            onclick={() => selectComponent({ uuid: c.uuid, source: 'panel' })}
           >
             <strong class="refdes">{c.refdes}</strong>
             <span class="value">{c.value}</span>

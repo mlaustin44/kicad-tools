@@ -508,7 +508,7 @@
     from { transform: translateX(-100%); }
     to   { transform: translateX(340%); }
   }
-  .subtle { font-size: 0.7rem; opacity: 0.7; margin-top: 0.3rem; max-width: 420px; }
+  .subtle { font-size: 0.7rem; opacity: 0.7; margin-top: 0.3rem; max-width: 420px; overflow-wrap: break-word; }
   .dim { color: var(--kv-text-dim); font-size: 0.85rem; }
   .btn {
     display: inline-block; margin-top: 0.75rem;
@@ -527,7 +527,7 @@
   .presets button {
     background: transparent; border: none;
     padding: 4px 10px; font-size: 0.75rem;
-    color: var(--kv-text); cursor: pointer;
+    color: #fff; cursor: pointer;
     border-radius: 4px;
   }
   .presets button:hover { background: var(--kv-surface-2); }

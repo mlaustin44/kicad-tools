@@ -1,6 +1,6 @@
 import { writable } from 'svelte/store';
 
-export type SelectionSource = 'sch' | 'pcb' | '3d' | 'search';
+export type SelectionSource = 'sch' | 'pcb' | '3d' | 'search' | 'panel';
 
 export type Selection =
   | { kind: 'component'; uuid: string; source: SelectionSource }
