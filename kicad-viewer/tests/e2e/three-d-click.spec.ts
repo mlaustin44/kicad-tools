@@ -36,9 +36,14 @@ test.describe('ohm-lamp GLB click-to-select (requires local fixture)', () => {
     await modelInput.setInputFiles(OHM_GLB);
 
     // Wait for the loading overlay to go away. (GLB is fast, STEP is slow.)
-    await page.waitForSelector('.loading', { state: 'detached', timeout: 45_000 });
+    // Wait for the model to finish loading AND refdes matching to complete.
+    // Checking the debug hook directly is more reliable than watching DOM
+    // transients like the loading overlay which can flash too fast.
+    await page.waitForFunction(
+      () => (window as unknown as { __kv3d?: { refdesCount: number } }).__kv3d?.refdesCount != null,
+      { timeout: 45_000 }
+    );
 
-    // Assert the debug hook populated and refdes were matched.
     const info = await page.evaluate(() => {
       const kv = (window as unknown as { __kv3d?: { refdesCount: number; refdesList: string[] } }).__kv3d;
       if (!kv) return null;
@@ -67,7 +72,10 @@ test.describe('ohm-lamp GLB click-to-select (requires local fixture)', () => {
     await page.getByRole('tab', { name: '3D' }).click();
     const modelInput = page.locator('[aria-label="Drop a 3D model file"] input[type=file]');
     await modelInput.setInputFiles(OHM_GLB);
-    await page.waitForSelector('.loading', { state: 'detached', timeout: 45_000 });
+    await page.waitForFunction(
+      () => (window as unknown as { __kv3d?: { refdesCount: number } }).__kv3d?.refdesCount != null,
+      { timeout: 45_000 }
+    );
 
     // Sanity: 3D tab is currently selected.
     await expect(page.getByRole('tab', { name: '3D' })).toHaveAttribute('aria-selected', 'true');

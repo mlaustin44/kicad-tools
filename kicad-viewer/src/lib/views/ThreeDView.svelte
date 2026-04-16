@@ -6,12 +6,13 @@
   import { project, setProjectGlbUrl, setProjectStepUrl } from '$lib/stores/project';
   import { selection, selectComponent, clearSelection } from '$lib/stores/selection';
   import { theme } from '$lib/stores/theme';
-  import { loadGlb, indexByRefdes } from '$lib/three/loader';
+  import { loadGlb, evictGlb, indexByRefdes } from '$lib/three/loader';
   import { loadStep, evictStep } from '$lib/three/step-loader';
   import { indexByPosition } from '$lib/three/position-index';
   import { computeComponentFrame } from '$lib/three/camera-framing';
   import { pushToast } from '$lib/stores/toasts';
   import { model3dStatus, markLoading, markReady, markError } from '$lib/stores/model3d';
+  import { mergeRecentFile } from '$lib/stores/recent';
 
   type PresetView = 'top' | 'bottom' | 'iso';
 
@@ -217,8 +218,8 @@
     // Swap out the previous model.
     if (currentModelGroup) {
       scene.remove(currentModelGroup);
-      if (currentModelKind === 'glb') {
-        disposeGlbGroup(currentModelGroup);
+      if (currentModelKind === 'glb' && currentModelUrl) {
+        evictGlb(currentModelUrl);
       } else if (currentModelKind === 'step' && currentModelUrl) {
         evictStep(currentModelUrl);
       }
@@ -325,9 +326,12 @@
       pushToast({ kind: 'error', message: '3D: expected a .glb, .step, or .stp file' });
       return;
     }
-    const url = URL.createObjectURL(f);
+    const bytes = new Uint8Array(await f.arrayBuffer());
+    const url = URL.createObjectURL(new Blob([bytes]));
     if (isStep) setProjectStepUrl(url);
     else setProjectGlbUrl(url);
+    // Persist so the 3D file survives page reloads alongside the PCB/SCH.
+    void mergeRecentFile(f.name, bytes);
   }
 
   function onModelDrop(ev: DragEvent): void {

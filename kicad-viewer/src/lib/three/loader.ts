@@ -3,7 +3,36 @@ import * as THREE from 'three';
 import type { Group, Object3D } from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 
-export async function loadGlb(url: string): Promise<Group> {
+// Per-URL cache: GLB load + optimize is expensive (~5s for a detailed
+// board). Tab-switching unmounts/remounts ThreeDView and would re-fetch +
+// re-parse + re-merge every time without this.
+const glbCache = new Map<string, Promise<Group>>();
+
+export function loadGlb(url: string): Promise<Group> {
+  const cached = glbCache.get(url);
+  if (cached) return cached;
+  const p = _loadGlb(url);
+  glbCache.set(url, p);
+  p.catch(() => glbCache.delete(url));
+  return p;
+}
+
+export function evictGlb(url: string): void {
+  const p = glbCache.get(url);
+  if (!p) return;
+  glbCache.delete(url);
+  p.then((group) => {
+    group.traverse((o) => {
+      const mesh = o as THREE.Mesh;
+      if (mesh.geometry) mesh.geometry.dispose();
+      const mat = mesh.material;
+      if (Array.isArray(mat)) mat.forEach((m) => m.dispose());
+      else if (mat) mat.dispose();
+    });
+  }).catch(() => {});
+}
+
+async function _loadGlb(url: string): Promise<Group> {
   const loader = new GLTFLoader();
   return new Promise<Group>((resolve, reject) => {
     loader.load(

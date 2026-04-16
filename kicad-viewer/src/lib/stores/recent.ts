@@ -58,6 +58,20 @@ export async function loadRecent(): Promise<Record<string, string | Uint8Array> 
   }
 }
 
+export async function mergeRecentFile(
+  name: string,
+  data: string | Uint8Array
+): Promise<void> {
+  try {
+    const existing = await loadRecent();
+    if (!existing) return;
+    existing[name] = data;
+    await saveRecent(existing);
+  } catch {
+    // ignore
+  }
+}
+
 export async function clearRecent(): Promise<void> {
   try {
     const db = await open();
