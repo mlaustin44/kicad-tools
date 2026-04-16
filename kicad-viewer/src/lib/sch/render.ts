@@ -542,20 +542,27 @@ function hierLabelPoints(shape: string, w: number, h: number, tip: number): Arra
 }
 
 function labelOrientation(
-  _x: number,
-  _y: number,
+  x: number,
+  y: number,
   rot: number,
   justify?: { horizontal?: string; vertical?: string }
 ): { anchor: 'start' | 'end'; transform: string } {
   const r = ((rot % 360) + 360) % 360;
-  // KiCad net labels use rotation to indicate the wire-connection direction and
-  // justify to control which way text extends from the pin. We need to honour
-  // both to avoid text running into the symbol body.
-  if (justify?.horizontal === 'right') return { anchor: 'end', transform: '' };
-  if (justify?.horizontal === 'left') return { anchor: 'start', transform: '' };
-  // Fallback to rotation-based heuristic when justify isn't explicit.
-  if (r === 180 || r === 270) return { anchor: 'end', transform: '' };
-  return { anchor: 'start', transform: '' };
+  const vertical = r === 90 || r === 270;
+
+  // Determine text-anchor from justify, falling back to rotation convention.
+  let anchor: 'start' | 'end';
+  if (justify?.horizontal === 'right') anchor = 'end';
+  else if (justify?.horizontal === 'left') anchor = 'start';
+  else anchor = (r === 180 || r === 270) ? 'end' : 'start';
+
+  // For vertical labels (90/270), rotate the text so it reads bottom-to-top
+  // (matching KiCad's convention of keeping all text readable).
+  const transform = vertical
+    ? ` transform="rotate(-90 ${fmt(x)} ${fmt(y)})"`
+    : '';
+
+  return { anchor, transform };
 }
 
 // ---------- symbols (components + power) ----------
