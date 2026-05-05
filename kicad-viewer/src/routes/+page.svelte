@@ -36,7 +36,7 @@
     </nav>
   </section>
 
-  <footer class="credit">Built by Matthew Austin, 2026 · Licensed under <a href="https://github.com/mlaustin44/kicad-tools/tree/main/kicad-viewer/LICENSE" target="_blank" rel="noopener">AGPLv3</a></footer>
+  <footer class="credit">Built by Matthew Austin, 2026 · Licensed under <a href="https://github.com/mlaustin44/kicad-tools/blob/main/LICENSE" target="_blank" rel="noopener">Apache 2.0</a></footer>
 </main>
 
 <style>
