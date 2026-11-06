@@ -16,3 +16,5 @@ kicad-release/example/*.local.toml
 
 # Local reference clones (kicanvas, InteractiveHtmlBom, etc.)
 references/
+.kicad-stitch-*/
+kicad-stitch/.integration/

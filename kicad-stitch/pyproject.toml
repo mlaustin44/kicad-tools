@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kicad-stitch"
+version = "0.1.0"
+description = "Plan and verify ground stitching vias on KiCad 10 boards"
+requires-python = ">=3.11"
+license = "Apache-2.0"
+dependencies = ["shapely>=2.0,<3"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[project.scripts]
+kicad-stitch = "kicad_stitch.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["kicad_stitch*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

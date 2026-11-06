@@ -1,0 +1,253 @@
+"""File-based KiCad 10 adapter and validation transaction.
+
+The planner never imports this module. A future IPC adapter can implement the same
+snapshot/place/refill operations without changing the placement algorithms.
+"""
+from __future__ import annotations
+
+from collections import Counter
+from dataclasses import asdict
+import hashlib
+import json
+from pathlib import Path
+import shutil
+import subprocess
+import sys
+import tempfile
+
+from .geometry import Connectivity, decode
+from .model import Settings
+from .planner import plan
+
+
+class BackendError(RuntimeError):
+    pass
+
+
+class KiCad:
+    def __init__(self, runtime="auto", python=None, cli=None, timeout=600):
+        if runtime == "auto":
+            runtime = "native" if shutil.which(cli or "kicad-cli") else "flatpak"
+        self.runtime = runtime
+        self.timeout = timeout
+        if runtime == "native":
+            self.python = [python or sys.executable]
+            self.cli = [cli or "kicad-cli"]
+        else:
+            self.python = ["flatpak", "run", "--command=python3", "org.kicad.KiCad"]
+            self.cli = ["flatpak", "run", "--command=kicad-cli", "org.kicad.KiCad"]
+
+    def command(self, args, payload=None):
+        try:
+            result = subprocess.run(args, input=json.dumps(payload) if payload is not None else None,
+                                    text=True, capture_output=True, timeout=self.timeout)
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise BackendError(f"Could not run KiCad: {exc}") from exc
+        if result.returncode:
+            raise BackendError(f"KiCad command failed ({result.returncode}): {result.stderr.strip() or result.stdout.strip()}")
+        return result.stdout
+
+    def check(self):
+        version = self.command([*self.cli, "version"]).strip()
+        if not version.startswith("10."):
+            raise BackendError(f"Requires KiCad 10.x, found {version}")
+        return version
+
+    def worker(self, action, board, **kwargs):
+        output = self.command([*self.python, str(Path(__file__).with_name("worker.py"))],
+                              {"action": action, "board": str(board), **kwargs})
+        try:
+            return json.loads(output)
+        except json.JSONDecodeError as exc:
+            raise BackendError(f"Invalid KiCad worker response: {output[:500]}") from exc
+
+    def snapshot(self, board, net):
+        return self.worker("snapshot", board, net=net)
+
+    def drc(self, board, output):
+        self.command([*self.cli, "pcb", "drc", "--format", "json", "--severity-all",
+                      "--all-track-errors", "--units", "mm", "--refill-zones", "--save-board",
+                      "--output", str(output), str(board)])
+        try:
+            report = json.loads(output.read_text())
+        except (OSError, json.JSONDecodeError) as exc:
+            raise BackendError(f"KiCad did not produce a valid DRC report: {exc}") from exc
+        if not all(key in report for key in ("violations", "unconnected_items")):
+            raise BackendError("Unrecognized KiCad DRC report schema")
+        if report.get("coordinate_units") != "mm":
+            raise BackendError("KiCad DRC returned unexpected coordinate units")
+        return report
+
+
+def drc_issues(report):
+    """Compare issue identities and multiplicities, not just total counts.
+
+    Locations are retained: two same-type violations against the same objects at
+    distinct locations must not mask one another. KiCad reports in millimetres.
+    """
+    records = []
+    for section in ("violations", "unconnected_items", "schematic_parity"):
+        for issue in report.get(section, []):
+            # Explicitly excluded project violations keep their existing semantics.
+            if issue.get("severity") == "exclusion":
+                continue
+            items = tuple(sorted((str(item.get("uuid", "")),
+                                  round(item.get("pos", {}).get("x", 0), 4),
+                                  round(item.get("pos", {}).get("y", 0), 4))
+                                 for item in issue.get("items", [])))
+            records.append((section, issue.get("type"), issue.get("severity"), items))
+    return Counter(records)
+
+
+def copy_project(source, directory, name=None):
+    directory.mkdir(parents=True, exist_ok=True)
+    target = directory / (name or source.name)
+    shutil.copy2(source, target)
+    for suffix in (".kicad_pro", ".kicad_dru"):
+        sibling = source.with_suffix(suffix)
+        if sibling.exists():
+            shutil.copy2(sibling, target.with_suffix(suffix))
+    return target
+
+
+def fingerprint(source):
+    return {str(path): hashlib.sha256(path.read_bytes()).hexdigest()
+            for path in (source, source.with_suffix(".kicad_pro"), source.with_suffix(".kicad_dru"))
+            if path.exists()}
+
+
+def check_via_dimensions(settings, project):
+    data = json.loads(project.read_text())
+    rules = data.get("board", {}).get("design_settings", {}).get("rules", {})
+    checks = [(settings.diameter_mm, rules.get("min_via_diameter", 0), "via diameter"),
+              (settings.drill_mm, rules.get("min_through_hole_diameter", 0), "via drill"),
+              ((settings.diameter_mm - settings.drill_mm) / 2, rules.get("min_via_annular_width", 0), "annular ring")]
+    for actual, minimum, name in checks:
+        if actual + 1e-9 < minimum:
+            raise ValueError(f"Configured {name} {actual} mm is below project minimum {minimum} mm")
+
+
+def final_connectivity(snapshot, candidates, settings, reference=None):
+    """Verify proposed vias against actual, normally refilled copper.
+
+    The snapshot's ground polygons exclude via pads, so a via cannot prove its own
+    landing. The center must land in ground on at least two layers and reach the
+    selected reference component after the real island-removal settings apply.
+    """
+    ground = {layer: decode(polys) for layer, polys in snapshot["ground"].items()}
+    graph = Connectivity(ground, snapshot["bridges"], settings.anchors_mm)
+    from shapely.geometry import Point
+    if reference:
+        nodes = graph.touch(Point(reference["at"]), [reference["layer"]])
+        if not nodes:
+            raise BackendError("Reference ground disappeared during final fill")
+        graph.root = nodes[0]
+    failures = []
+    for candidate in candidates:
+        at = Point(candidate.x, candidate.y)
+        touched = graph.touch(at)
+        layers = {graph.regions[i][0] for i in touched}
+        if len(layers) < 2 or not any(graph.rooted(i) for i in touched):
+            failures.append(candidate.uuid)
+        else:
+            candidate.layers = sorted(layers)
+    return failures, [{"layer": graph.regions[i][0],
+                       "area_mm2": graph.regions[i][1].area,
+                       "at": list(graph.regions[i][1].representative_point().coords)[0]}
+                      for i in graph.missing()]
+
+
+def run(source: Path, settings: Settings, backend: KiCad, *, output: Path | None = None):
+    """Plan and validate in scratch space; publish only if requested and verified.
+
+    Returns (Plan, snapshot, baseline DRC, final DRC). Even a preview is validated
+    by native refill/DRC. Any new violation aborts publication; no checks are skipped.
+    """
+    source = source.resolve()
+    if source.suffix != ".kicad_pcb" or not source.is_file():
+        raise ValueError("Input must be an existing .kicad_pcb file")
+    project = source.with_suffix(".kicad_pro")
+    if not project.is_file():
+        raise ValueError("A sibling .kicad_pro is required so project design rules are preserved")
+    check_via_dimensions(settings, project)
+    hashes = fingerprint(source)
+    if output is not None:
+        output = output.resolve()
+        if output.suffix != ".kicad_pcb" or output == source or output.exists():
+            raise ValueError("Output must be a new .kicad_pcb path distinct from the source")
+        if any(output.with_suffix(s).exists() for s in (".kicad_pro", ".kicad_dru")):
+            raise ValueError("Output project/rules already exist; choose a new output basename")
+    version = backend.check()
+    # Flatpak has a private /tmp; use a visible working-directory scratch path.
+    scratch_parent = Path.cwd() if backend.runtime == "flatpak" else None
+    with tempfile.TemporaryDirectory(prefix=".kicad-stitch-", dir=scratch_parent) as tmp:
+        root = Path(tmp)
+        original = copy_project(source, root / "baseline")
+        baseline_drc = backend.drc(original, root / "baseline-drc.json")
+        exploratory = copy_project(original, root / "exploratory")
+        backend.worker("retain", exploratory, net=settings.net, output=str(exploratory))
+        backend.drc(exploratory, root / "exploratory-drc.json")
+        snapshot = backend.snapshot(exploratory, settings.net)
+        result = plan(snapshot, settings)
+        rejected = []
+        for iteration in range(5):
+            proposed = copy_project(original, root / "proposed", output.name if output else None)
+            ids = backend.worker("place", proposed, net=settings.net, output=str(proposed),
+                                 candidates=[asdict(c) for c in result.candidates],
+                                 diameter_mm=settings.diameter_mm, drill_mm=settings.drill_mm)["uuids"]
+            for candidate, uid in zip(result.candidates, ids, strict=True):
+                candidate.uuid = uid
+            final_drc = backend.drc(proposed, root / "final-drc.json")
+            new = drc_issues(final_drc) - drc_issues(baseline_drc)
+            failures, missing = final_connectivity(backend.snapshot(proposed, settings.net), result.candidates, settings,
+                                                  result.parameters["reference_ground"])
+            if not new and not failures:
+                break
+            implicated = set(failures)
+            for identity in new:
+                implicated.update(item[0] for item in identity[3] if item[0] in ids)
+            if not implicated or iteration == 4:
+                break
+            # Preserve symmetry: discard the signal's return group if either side
+            # fails an effective custom rule. No one-sided return gets published.
+            transition_groups = {c.reason for c in result.candidates if c.uuid in implicated and c.rule == "transition"}
+            removing = [c for c in result.candidates if c.uuid in implicated
+                        or (c.rule == "transition" and c.reason in transition_groups)]
+            for candidate in removing:
+                rejected.append({**asdict(candidate), "rejection": "native_drc_or_ground_connectivity"})
+            result.candidates = [c for c in result.candidates if c not in removing]
+        if rejected:
+            result.diagnostics.append({"rule": "native_rejections", "count": len(rejected),
+                "message": "Candidates removed after native DRC/connectivity; resulting coverage may have gaps"})
+        result.validation = {"status": "verified" if not new and not failures else "failed",
+                             "kicad_version": version, "runtime": backend.runtime,
+                             "source_sha256": hashes,
+                             "baseline_issue_count": sum(drc_issues(baseline_drc).values()),
+                             "final_issue_count": sum(drc_issues(final_drc).values()),
+                             "new_issues": [{"identity": identity, "count": count} for identity, count in new.items()],
+                             "unconnected_candidate_uuids": failures,
+                             "rejected_candidates": rejected,
+                             "validation_iterations": iteration + 1,
+                             "remaining_ground_components": missing,
+                             "published_board": None}
+        if fingerprint(source) != hashes:
+            raise BackendError("Source board or project changed during planning; run again")
+        if output is not None and result.validation["status"] == "verified":
+            output.parent.mkdir(parents=True, exist_ok=True)
+            published = []
+            try:
+                # Exclusive creation prevents a racing invocation overwriting files.
+                # Board is published last, after its project and custom rules.
+                for suffix in (".kicad_pro", ".kicad_dru", ".kicad_pcb"):
+                    src = proposed.with_suffix(suffix)
+                    if src.exists():
+                        dst = output.with_suffix(suffix)
+                        with dst.open("xb") as stream:
+                            published.append(dst)
+                            stream.write(src.read_bytes())
+            except BaseException:
+                for path in published:
+                    path.unlink()
+                raise
+            result.validation["published_board"] = str(output)
+        return result, snapshot, baseline_drc, final_drc

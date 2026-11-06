@@ -1,0 +1,61 @@
+# Coordinates and dimensions are millimetres. Net/reference selectors are case
+# sensitive shell globs. Missing selectors fail instead of silently doing nothing.
+[stitch]
+net = "GND"
+diameter_mm = 0.6
+drill_mm = 0.3
+clearance_mm = 0.2
+edge_clearance_mm = 0.3
+component_clearance_mm = 0.25
+min_spacing_mm = 1.0
+perimeter_offset_mm = 1.0
+
+perimeter = true
+islands = true
+grid = true
+fingers = true
+auto_pairs = true
+# Continuous fences need an offset appropriate to the transmission-line design.
+# The default auto-pair pass adds symmetric return vias at layer transitions.
+pair_fences = false
+signal_offset_mm = 1.0
+
+# Omit pitch for board-size-based density. Frequency/rise time, if supplied, also
+# bound pitch using the wavelength heuristic documented in docs/rules.md.
+# pitch_mm = 3.0
+# max_frequency_hz = 2.4e9
+# rise_time_ns = 0.5
+epsilon_r = 4.3
+wavelength_divisor = 20.0
+
+neck_width_mm = 1.5
+max_vias = 5000
+max_samples = 250000
+
+# Optionally anchor reference ground at an existing plated connection. Otherwise
+# the largest existing connected copper component is the reference.
+# anchors_mm = [[105.0, 72.0]]
+
+# All-pass exclusions, e.g. the antenna manufacturer's protected radiator region.
+# Rectangles use board coordinates [min_x, min_y, max_x, max_y]. Native via/pour
+# keepouts are respected automatically, including footprint-local keepouts.
+# exclusions_mm = [[120.0, 65.0, 135.0, 80.0]]
+
+# Explicit RF feed selection. This fences the chosen nets, not the radiator.
+# [[signal]]
+# name = "2.4 GHz feed"
+# nets = ["/RF/ANT_FEED", "/RF/MATCH*"]
+# mode = "fence"
+# offset_mm = 1.2
+# pitch_mm = 2.0
+
+# Selecting references follows ALL non-ground nets on their pads; use net names
+# if a component has unrelated power/control connections.
+# [[signal]]
+# name = "RF connector"
+# references = ["J_RF1"]
+# mode = "fence"
+# offset_mm = 1.2
+
+# For pairs without a recognized naming suffix, select exactly two nets and add:
+# differential = true
