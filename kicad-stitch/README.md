@@ -18,15 +18,30 @@ refill/DRC engine. No editor window or scripting plugin is needed.
 
 Supported runtimes:
 
-- Native `kicad-cli` and a Python interpreter that can `import pcbnew`. Use
-  `--runtime native --kicad-python /usr/bin/python3` when your package environment
-  does not include the system KiCad bindings.
+- Native `kicad-cli` and a Python interpreter that can `import pcbnew`. The tool
+  probes interpreters beside the CLI, KiCad's bundled macOS Python, common system
+  Python paths, PATH interpreters and the host/base Python. It selects an
+  interpreter whose bindings match the CLI's major/minor KiCad version. The uv
+  tool environment can remain isolated; it does not need `pcbnew` installed there.
+  To override detection, use `--runtime native --kicad-python /usr/bin/python3`
+  (typical Linux system installation), or the Python bundled with your KiCad.
 - The installed `org.kicad.KiCad` Flatpak: `--runtime flatpak`. KiCad's Python runs
   inside Flatpak; Shapely runs on the host. Flatpak must be able to read the tool
   installation and working directory. Scratch directories are created under the
   working directory because Flatpak has its own `/tmp`.
 
-`--runtime auto` selects native when `kicad-cli` is on PATH, otherwise Flatpak.
+`--runtime auto` prefers a working native CLI/Python pair and falls back to the
+installed KiCad Flatpak if no compatible native pair is available. CLI version
+and `pcbnew` import/version are checked before any scratch copy, refill or DRC.
+An explicit `--runtime native`, `--kicad-python` or `--kicad-cli` is authoritative:
+failures are reported with guidance instead of silently switching installations.
+Native executable overrides cannot be combined with `--runtime flatpak`.
+
+If no interpreter can import compatible bindings, install the Python bindings
+provided by your KiCad distribution or select a working interpreter explicitly.
+`pcbnew` is a native KiCad module, not a dependency to install from PyPI. Reports
+record the selected runtime, Python command and CLI command.
+
 KiCad 11 is deliberately unsupported by this adapter: SWIG removal requires an
 IPC adapter. See [architecture](docs/architecture.md).
 

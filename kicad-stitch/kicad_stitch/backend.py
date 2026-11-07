@@ -18,6 +18,7 @@ import tempfile
 from .geometry import Connectivity, decode
 from .model import Settings
 from .planner import plan
+from .runtime import RuntimeDiscoveryError, discover_python, probe_python
 
 
 class BackendError(RuntimeError):
@@ -26,8 +27,15 @@ class BackendError(RuntimeError):
 
 class KiCad:
     def __init__(self, runtime="auto", python=None, cli=None, timeout=600):
+        if runtime not in {"auto", "native", "flatpak"}:
+            raise ValueError(f"Unknown KiCad runtime: {runtime}")
+        if runtime == "flatpak" and (python or cli):
+            raise ValueError("--kicad-python and --kicad-cli select native executables; use --runtime native")
+        self._auto_fallback = runtime == "auto" and not (python or cli)
+        self._explicit_python = python
+        self._version = None
         if runtime == "auto":
-            runtime = "native" if shutil.which(cli or "kicad-cli") else "flatpak"
+            runtime = "native" if python or cli or shutil.which("kicad-cli") else "flatpak"
         self.runtime = runtime
         self.timeout = timeout
         if runtime == "native":
@@ -37,10 +45,10 @@ class KiCad:
             self.python = ["flatpak", "run", "--command=python3", "org.kicad.KiCad"]
             self.cli = ["flatpak", "run", "--command=kicad-cli", "org.kicad.KiCad"]
 
-    def command(self, args, payload=None):
+    def command(self, args, payload=None, *, timeout=None):
         try:
             result = subprocess.run(args, input=json.dumps(payload) if payload is not None else None,
-                                    text=True, capture_output=True, timeout=self.timeout)
+                                    text=True, capture_output=True, timeout=self.timeout if timeout is None else timeout)
         except (OSError, subprocess.TimeoutExpired) as exc:
             raise BackendError(f"Could not run KiCad: {exc}") from exc
         if result.returncode:
@@ -48,12 +56,36 @@ class KiCad:
         return result.stdout
 
     def check(self):
+        if self._version is not None:
+            return self._version
+        try:
+            return self._check_runtime()
+        except (BackendError, RuntimeDiscoveryError) as native_error:
+            if self.runtime == "native" and self._auto_fallback and shutil.which("flatpak"):
+                self.runtime = "flatpak"
+                self.python = ["flatpak", "run", "--command=python3", "org.kicad.KiCad"]
+                self.cli = ["flatpak", "run", "--command=kicad-cli", "org.kicad.KiCad"]
+                try:
+                    return self._check_runtime()
+                except (BackendError, RuntimeDiscoveryError) as flatpak_error:
+                    raise BackendError(f"Native KiCad unavailable: {native_error}\n"
+                                       f"Flatpak KiCad unavailable: {flatpak_error}") from flatpak_error
+            raise BackendError(str(native_error)) from native_error
+
+    def _check_runtime(self):
         version = self.command([*self.cli, "version"]).strip()
         if not version.startswith("10."):
             raise BackendError(f"Requires KiCad 10.x, found {version}")
+        run_probe = lambda args: self.command(args, timeout=min(self.timeout, 15))
+        if self.runtime == "native":
+            self.python = discover_python(self.cli[0], version, run_probe, explicit=self._explicit_python)
+        else:
+            probe_python(self.python, version, run_probe)
+        self._version = version
         return version
 
     def worker(self, action, board, **kwargs):
+        self.check()
         output = self.command([*self.python, str(Path(__file__).with_name("worker.py"))],
                               {"action": action, "board": str(board), **kwargs})
         try:
@@ -65,6 +97,7 @@ class KiCad:
         return self.worker("snapshot", board, net=net)
 
     def drc(self, board, output):
+        self.check()
         self.command([*self.cli, "pcb", "drc", "--format", "json", "--severity-all",
                       "--all-track-errors", "--units", "mm", "--refill-zones", "--save-board",
                       "--output", str(output), str(board)])
@@ -250,6 +283,8 @@ def run(source: Path, settings: Settings, backend: KiCad, *, output: Path | None
         issue_records = lambda issues: [{"identity": identity, "count": count} for identity, count in issues.items()]
         result.validation = {"status": status,
                              "kicad_version": version, "runtime": backend.runtime,
+                             "python_command": backend.python,
+                             "cli_command": backend.cli,
                              "source_sha256": hashes,
                              "baseline_issue_count": sum(drc_issues(baseline_drc).values()),
                              "final_issue_count": sum(drc_issues(final_drc).values()),

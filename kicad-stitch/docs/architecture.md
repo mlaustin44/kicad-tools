@@ -48,6 +48,10 @@ same package version; they are not a separately stabilized file format.
 ## Native verification and publication
 
 1. Hash source PCB, project and optional custom-rule file.
+   Resolve and validate the CLI/Python runtime pair before creating scratch files:
+   probe `pcbnew` in candidate interpreters outside the isolated host environment,
+   require a matching KiCad major/minor version, and cache the selection. Auto
+   mode may switch the entire pair to Flatpak; explicit overrides never do.
 2. Copy those files to a scratch baseline with the same basename so KiCad loads
    the correct project rules. Refill and save with `kicad-cli pcb drc`.
 3. Create an exploratory copy, retain ground islands there, and refill natively.

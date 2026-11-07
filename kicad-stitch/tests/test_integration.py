@@ -5,6 +5,7 @@ Flatpak tests use a workspace scratch directory because its /tmp is private.
 import json
 import os
 from pathlib import Path
+import shlex
 import tempfile
 
 import pytest
@@ -53,6 +54,30 @@ def test_recovers_removed_island_without_new_drc_or_source_changes(native_board)
     assert '(island_removal_mode 0)' in output.read_text()  # KiCad ALWAYS = 0
     assert '(island_removal_mode 1)' not in output.read_text()
     assert len(result.candidates) == len(final["existing_vias"])
+
+
+def test_native_discovery_and_worker_with_real_kicad_launchers(native_board):
+    """Exercise native discovery against actual bindings via POSIX launchers.
+
+    The CI/development machine may have only Flatpak KiCad. These launchers expose
+    its real CLI and Python as a native-style installation beside each other;
+    the host uv interpreter still has no pcbnew.
+    """
+    source, installed = native_board
+    if os.name != "posix" or installed.runtime != "flatpak":
+        pytest.skip("Requires the POSIX Flatpak fixture for real KiCad launchers")
+    directory = source.parent / "native-bin"
+    directory.mkdir()
+    for name, command in (("kicad-cli", installed.cli), ("python3", installed.python)):
+        launcher = directory / name
+        launcher.write_text("#!/bin/sh\nexec " + shlex.join(command) + ' "$@"\n')
+        launcher.chmod(0o755)
+    backend = KiCad("native", cli=str(directory / "kicad-cli"))
+    assert backend.check().startswith("10.")
+    assert backend.python == [str(directory / "python3")]
+    snapshot = backend.snapshot(source, "GND")
+    assert snapshot["version"] == installed.check()
+    assert decode(snapshot["outline"]).area == pytest.approx(1164)
 
 
 def test_custom_rules_reject_candidates_and_preserve_source(native_board):

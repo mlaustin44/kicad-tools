@@ -20,7 +20,7 @@ def parser():
     p.add_argument("--output", type=Path, help="Publish a new verified board and project at this path")
     p.add_argument("--report-dir", type=Path, help="New directory for JSON, SVG and DRC reports")
     p.add_argument("--runtime", choices=["auto", "native", "flatpak"], default="auto")
-    p.add_argument("--kicad-python", help="Python interpreter with pcbnew (native runtime)")
+    p.add_argument("--kicad-python", help="Explicit Python with pcbnew (native runtime; otherwise autodetected)")
     p.add_argument("--kicad-cli", help="kicad-cli executable (native runtime)")
     p.add_argument("--version", action="version", version=__version__)
     return p
@@ -42,6 +42,7 @@ def main(argv=None):
         (report / "preview.svg").write_text(svg(snapshot, result, settings))
         counts = Counter(c.rule for c in result.candidates)
         summary = {"status": result.validation["status"], "vias": len(result.candidates),
+                   "runtime": result.validation["runtime"],
                    "by_rule": dict(counts), "report": str(report),
                    "output": result.validation["published_board"],
                    "diagnostics": dict(Counter(d["rule"] for d in result.diagnostics)),
