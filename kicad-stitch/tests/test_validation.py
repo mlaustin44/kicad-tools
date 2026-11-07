@@ -1,6 +1,10 @@
 from copy import deepcopy
+from collections import Counter
+import json
 
-from kicad_stitch.backend import drc_issues, final_connectivity
+import pytest
+
+from kicad_stitch.backend import check_via_dimensions, drc_issues, final_connectivity, partition_new_issues
 from kicad_stitch.model import Candidate, Settings
 from test_planner import board, encode
 from shapely.geometry import box
@@ -32,3 +36,32 @@ def test_final_validation_rejects_via_joining_floating_ground_only():
     b["bridges"].append({"at": [22, 22], "layers": ["F.Cu", "B.Cu"]})
     c = Candidate(22, 22, "grid", "test", ["F.Cu", "B.Cu"], "candidate")
     assert final_connectivity(b, [c], Settings())[0] == ["candidate"]
+
+
+@pytest.mark.parametrize("diameter,drill", [(0.5, 0.3), (0.6, 0.4)])
+def test_annular_global_minimum_does_not_preempt_native_drc(tmp_path, diameter, drill):
+    project = tmp_path / "board.kicad_pro"
+    project.write_text(json.dumps({"board": {"design_settings": {"rules": {
+        "min_via_diameter": 0.5, "min_through_hole_diameter": 0.3, "min_via_annular_width": 0.16}}}}))
+    check_via_dimensions(Settings(diameter_mm=diameter, drill_mm=drill), project)
+    with pytest.raises(ValueError, match="via diameter"):
+        check_via_dimensions(Settings(diameter_mm=0.4, drill_mm=0.3), project)
+    with pytest.raises(ValueError, match="via drill"):
+        check_via_dimensions(Settings(diameter_mm=0.5, drill_mm=0.2), project)
+
+
+def test_only_annular_warnings_on_generated_vias_are_advisory():
+    def identity(kind="annular_width", severity="warning", uuids=("generated",)):
+        return ("violations", kind, severity, tuple((uid, 1, 2) for uid in uuids))
+    accepted = identity()
+    rejected = [identity(severity="error"), identity(kind="clearance"),
+                identity(uuids=("existing",)), identity(uuids=("generated", "existing")),
+                identity(uuids=())]
+    issues = Counter({accepted: 3, **{issue: 1 for issue in rejected}})
+    blocking, advisory = partition_new_issues(issues, ["generated"], Settings())
+    assert advisory == Counter({accepted: 3})
+    assert blocking == Counter({issue: 1 for issue in rejected})
+    strict_blocking, strict_advisory = partition_new_issues(
+        issues, ["generated"], Settings(allow_annular_width_warnings=False))
+    assert strict_blocking == issues
+    assert not strict_advisory

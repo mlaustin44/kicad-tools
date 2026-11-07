@@ -4,6 +4,10 @@
 net = "GND"
 diameter_mm = 0.6
 drill_mm = 0.3
+# KiCad annular width is radial: (diameter - drill) / 2. Keep native WARNING
+# issues on generated vias visible without rejecting the via. Errors still block.
+# Set false to enforce a no-new-warnings policy for annular width as well.
+allow_annular_width_warnings = true
 clearance_mm = 0.2
 edge_clearance_mm = 0.3
 component_clearance_mm = 0.25

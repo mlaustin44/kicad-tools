@@ -41,6 +41,7 @@ class Settings:
     net: str = "GND"
     diameter_mm: float = 0.6
     drill_mm: float = 0.3
+    allow_annular_width_warnings: bool = True
     clearance_mm: float = 0.2
     edge_clearance_mm: float = 0.3
     component_clearance_mm: float = 0.25
@@ -66,7 +67,8 @@ class Settings:
     signals: tuple[Signal, ...] = ()
 
     def __post_init__(self):
-        booleans = {"perimeter", "islands", "grid", "fingers", "auto_pairs", "pair_fences"}
+        booleans = {"perimeter", "islands", "grid", "fingers", "auto_pairs", "pair_fences",
+                    "allow_annular_width_warnings"}
         for key in booleans:
             if not isinstance(getattr(self, key), bool):
                 raise ValueError(f"{key} must be true or false")

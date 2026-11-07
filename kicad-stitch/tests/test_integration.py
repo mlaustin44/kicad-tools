@@ -10,6 +10,7 @@ import tempfile
 import pytest
 
 from kicad_stitch.backend import KiCad, drc_issues, fingerprint, run
+from kicad_stitch.cli import main
 from kicad_stitch.geometry import decode
 from kicad_stitch.model import Settings
 
@@ -82,6 +83,78 @@ def test_repeated_run_is_idempotent_and_existing_output_is_protected(native_boar
     assert not second.candidates
     with pytest.raises(ValueError, match="new .kicad_pcb"):
         run(source, Settings(), backend, output=output)
+
+
+@pytest.mark.parametrize("diameter,drill,severity,allow_warnings", [
+    (0.5, 0.3, "warning", True),
+    (0.6, 0.4, "warning", True),
+    (0.5, 0.3, "warning", False),
+    (0.5, 0.3, "error", True),
+    (0.5, 0.3, "ignore", True),
+])
+def test_annular_width_uses_native_severity(native_board, diameter, drill, severity, allow_warnings):
+    source, backend = native_board
+    project = source.with_suffix(".kicad_pro")
+    data = json.loads(project.read_text())
+    design = data["board"]["design_settings"]
+    design["rules"]["min_via_annular_width"] = 0.16
+    design["rule_severities"] = {"annular_width": severity}
+    project.write_text(json.dumps(data))
+    original = fingerprint(source)
+    output = source.with_name("annular-stitched.kicad_pcb")
+    settings = Settings(diameter_mm=diameter, drill_mm=drill,
+                        allow_annular_width_warnings=allow_warnings,
+                        perimeter=False, grid=False, fingers=False, auto_pairs=False)
+    result, _, before, after = run(source, settings, backend, output=output)
+    retained = severity == "ignore" or (severity == "warning" and allow_warnings)
+    advisory = severity == "warning" and allow_warnings
+    assert result.validation["status"] == ("verified_with_warnings" if advisory else "verified")
+    assert bool(result.candidates) == retained
+    assert bool(result.validation["advisory_issues"]) == advisory
+    assert not result.validation["blocking_issues"]
+    assert bool(result.validation["new_issues"]) == advisory
+    assert bool(drc_issues(after) - drc_issues(before)) == advisory
+    assert output.is_file()
+    assert fingerprint(source) == original
+    published = json.loads(output.with_suffix(".kicad_pro").read_text())
+    assert published["board"]["design_settings"]["rules"]["min_via_annular_width"] == 0.16
+    assert published["board"]["design_settings"]["rule_severities"]["annular_width"] == severity
+    if advisory:
+        assert any(issue["type"] == "annular_width" and issue["severity"] == "warning"
+                   for issue in after["violations"])
+
+
+def test_cli_publishes_annular_warning_report_with_success(native_board, capsys):
+    source, _ = native_board
+    project = source.with_suffix(".kicad_pro")
+    data = json.loads(project.read_text())
+    data["board"]["design_settings"]["rules"]["min_via_annular_width"] = 0.16
+    data["board"]["design_settings"]["rule_severities"] = {"annular_width": "warning"}
+    project.write_text(json.dumps(data))
+    original = fingerprint(source)
+    config = source.with_name("stitch.toml")
+    config.write_text('''[stitch]
+diameter_mm = 0.5
+drill_mm = 0.3
+perimeter = false
+grid = false
+fingers = false
+auto_pairs = false
+''')
+    output = source.with_name("cli-stitched.kicad_pcb")
+    report = source.with_name("cli-report")
+    assert main([str(source), "--config", str(config), "--output", str(output),
+                 "--report-dir", str(report)]) == 0
+    summary = json.loads(capsys.readouterr().out)
+    assert summary["status"] == "verified_with_warnings"
+    assert summary["vias"] > 0
+    assert summary["advisory_issue_count"] > 0
+    plan_report = json.loads((report / "plan.json").read_text())
+    assert plan_report["validation"]["new_issues"]
+    assert not plan_report["validation"]["blocking_issues"]
+    assert (report / "preview.svg").is_file()
+    assert output.is_file()
+    assert fingerprint(source) == original
 
 
 def test_real_board_from_environment():

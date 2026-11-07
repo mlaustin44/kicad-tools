@@ -119,12 +119,32 @@ def fingerprint(source):
 def check_via_dimensions(settings, project):
     data = json.loads(project.read_text())
     rules = data.get("board", {}).get("design_settings", {}).get("rules", {})
+    # Annular width must be evaluated by native DRC: its severity may be a
+    # warning/ignored and effective custom rules may differ from the global min.
     checks = [(settings.diameter_mm, rules.get("min_via_diameter", 0), "via diameter"),
-              (settings.drill_mm, rules.get("min_through_hole_diameter", 0), "via drill"),
-              ((settings.diameter_mm - settings.drill_mm) / 2, rules.get("min_via_annular_width", 0), "annular ring")]
+              (settings.drill_mm, rules.get("min_through_hole_diameter", 0), "via drill")]
     for actual, minimum, name in checks:
         if actual + 1e-9 < minimum:
             raise ValueError(f"Configured {name} {actual} mm is below project minimum {minimum} mm")
+
+
+def partition_new_issues(new, candidate_ids, settings):
+    """Keep only annular-width warnings on generated vias as advisories.
+
+    Never waive annular errors, violations on pre-existing items, or other rule
+    types. Raw KiCad reports and the complete new-issue list remain unchanged.
+    """
+    blocking, advisory = Counter(), Counter()
+    candidate_ids = set(candidate_ids)
+    for identity, count in new.items():
+        section, kind, severity, items = identity
+        if (settings.allow_annular_width_warnings and section == "violations"
+                and kind == "annular_width" and severity == "warning" and items
+                and all(item[0] in candidate_ids for item in items)):
+            advisory[identity] = count
+        else:
+            blocking[identity] = count
+    return blocking, advisory
 
 
 def final_connectivity(snapshot, candidates, settings, reference=None):
@@ -161,7 +181,8 @@ def run(source: Path, settings: Settings, backend: KiCad, *, output: Path | None
     """Plan and validate in scratch space; publish only if requested and verified.
 
     Returns (Plan, snapshot, baseline DRC, final DRC). Even a preview is validated
-    by native refill/DRC. Any new violation aborts publication; no checks are skipped.
+    by native refill/DRC. New blocking violations prevent publication; permitted
+    annular-width warnings remain visible in both native and placement reports.
     """
     source = source.resolve()
     if source.suffix != ".kicad_pcb" or not source.is_file():
@@ -199,12 +220,13 @@ def run(source: Path, settings: Settings, backend: KiCad, *, output: Path | None
                 candidate.uuid = uid
             final_drc = backend.drc(proposed, root / "final-drc.json")
             new = drc_issues(final_drc) - drc_issues(baseline_drc)
+            blocking, advisory = partition_new_issues(new, ids, settings)
             failures, missing = final_connectivity(backend.snapshot(proposed, settings.net), result.candidates, settings,
                                                   result.parameters["reference_ground"])
-            if not new and not failures:
+            if not blocking and not failures:
                 break
             implicated = set(failures)
-            for identity in new:
+            for identity in blocking:
                 implicated.update(item[0] for item in identity[3] if item[0] in ids)
             if not implicated or iteration == 4:
                 break
@@ -219,12 +241,21 @@ def run(source: Path, settings: Settings, backend: KiCad, *, output: Path | None
         if rejected:
             result.diagnostics.append({"rule": "native_rejections", "count": len(rejected),
                 "message": "Candidates removed after native DRC/connectivity; resulting coverage may have gaps"})
-        result.validation = {"status": "verified" if not new and not failures else "failed",
+        if advisory:
+            result.diagnostics.append({"rule": "annular_width_warning", "count": sum(advisory.values()),
+                "message": "Native KiCad annular-width warnings retained on generated vias; project rules are unchanged",
+                "radial_width_mm": (settings.diameter_mm - settings.drill_mm) / 2,
+                "diameter_difference_mm": settings.diameter_mm - settings.drill_mm})
+        status = "failed" if blocking or failures else ("verified_with_warnings" if advisory else "verified")
+        issue_records = lambda issues: [{"identity": identity, "count": count} for identity, count in issues.items()]
+        result.validation = {"status": status,
                              "kicad_version": version, "runtime": backend.runtime,
                              "source_sha256": hashes,
                              "baseline_issue_count": sum(drc_issues(baseline_drc).values()),
                              "final_issue_count": sum(drc_issues(final_drc).values()),
-                             "new_issues": [{"identity": identity, "count": count} for identity, count in new.items()],
+                             "new_issues": issue_records(new),
+                             "blocking_issues": issue_records(blocking),
+                             "advisory_issues": issue_records(advisory),
                              "unconnected_candidate_uuids": failures,
                              "rejected_candidates": rejected,
                              "validation_iterations": iteration + 1,
@@ -232,7 +263,7 @@ def run(source: Path, settings: Settings, backend: KiCad, *, output: Path | None
                              "published_board": None}
         if fingerprint(source) != hashes:
             raise BackendError("Source board or project changed during planning; run again")
-        if output is not None and result.validation["status"] == "verified":
+        if output is not None and result.validation["status"] in {"verified", "verified_with_warnings"}:
             output.parent.mkdir(parents=True, exist_ok=True)
             published = []
             try:

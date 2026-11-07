@@ -56,10 +56,14 @@ same package version; they are not a separately stabilized file format.
    If publishing, use the requested output basename for native validation too.
 6. Refill, DRC and inspect actual ground contact/connectivity.
 7. Compare issue identities and multiplicities against the baseline. Remove
-   generated vias implicated by new DRC or failed ground contact; remove an
+   generated vias implicated by blocking DRC or failed ground contact; remove an
    entire symmetric-return group if either side fails. Repeat up to five native
    evaluations. Record rejected positions and warn of resulting coverage gaps.
 8. Fail closed if new issues cannot be attributed or remain after the limit.
+   With `allow_annular_width_warnings`, native annular-width warnings referencing
+   only generated vias are advisories. Keep them in the raw reports and complete
+   `new_issues` list, also classify them as `advisory_issues`, and use
+   `verified_with_warnings`. Annular errors and all other issues remain blocking.
 9. Recheck source hashes. If requested and verified, exclusively create new
    project/rules and finally the output board. Existing files are never replaced.
 
@@ -70,11 +74,15 @@ A GUI should keep native validation off its UI thread and expose progress at the
 operation boundaries. Selecting/deselecting proposed vias invalidates previous
 native validation and requires a fresh evaluation.
 
-The current native comparison detects new reported errors and warnings rather
+The native comparison detects new reported errors and warnings rather
 than requiring a completely clean starting board. It also includes unconnected
 items and keeps issue locations/multiplicity, so an equal total count cannot hide
 a changed violation. Project-ignored checks remain ignored; the report preserves
 KiCad's `ignored_checks` metadata for review.
+
+Annular width is deliberately absent from global dimension preflight: the native
+engine honors its effective rules and severity. Retained warning advisories do not
+alter either source or published project constraints or severities.
 
 ## KiCad API lifecycle
 

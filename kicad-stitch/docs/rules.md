@@ -10,7 +10,7 @@ antenna performance, EMC compliance, isolation in dB or IPC compliance.
 
 | Rule / concern | Source and review status | Implemented consequence | Classification / limits |
 | --- | --- | --- | --- |
-| Manufacturability: drill, annular ring, clearance, holes and edge spacing | Existing `.kicad_pro` and `.kicad_dru`; [KiCad 10 DRC documentation](https://docs.kicad.org/10.0/en/cli/cli.html#pcb-drc), reviewed | Check global size minima before planning; screen geometry conservatively; run native refill/DRC with original project rules; reject new issues | Hard publication gate for enabled/reported checks. Project exclusions and ignored checks retain their semantics |
+| Manufacturability: drill, annular ring, clearance, holes and edge spacing | Existing `.kicad_pro` and `.kicad_dru`; [KiCad 10 DRC documentation](https://docs.kicad.org/10.0/en/cli/cli.html#pcb-drc), reviewed | Check diameter/drill minima before planning; evaluate annular width natively; screen geometry conservatively; run native refill/DRC with original rules | Block new issues except explicitly reported annular-width warning advisories on generated vias. Project severities, exclusions and ignored checks retain their semantics |
 | Ground continuity | [KiCad zone documentation](https://docs.kicad.org/10.0/en/pcbnew/pcbnew.html); [ViaStitcher README](https://github.com/weirdgyn/viastitcher), reviewed | Use filled copper rather than zone outlines; require at least two ground landing layers; distinguish spacing exclusion from electrical coverage; graph regions and plated bridges; verify again after normal refill | Electrical connectivity requirement, not a guarantee of low RF impedance |
 | Differential transitions and reference paths | TI, [High-Speed Interface Layout Guidelines, SPRAAR7J](https://www.ti.com/lit/an/spraar7j/spraar7j.pdf), §2.4 and Fig. 2-11, reviewed | Prioritize symmetric return vias near paired transition vias; leave an obstructed pair unresolved instead of moving just one side; continuous fencing is opt-in | Vendor guidance supports proximity/symmetry. TI's 200 mil maximum applies to that guidance, not a universal tool default. Actual reference-layer changes and power-to-ground reference transitions are not inferred |
 | Antenna radiator protection | Infineon, [AN91445, Antenna Design and RF Layout Guidelines](https://www.infineon.com/assets/row/public/documents/cross-divisions/42/infineon-an91445-antenna-design-and-rf-layout-guidelines-applicationnotes-en.pdf), §12, reviewed; TI, [CC3135/CC3235 layout guidelines](https://www.ti.com/lit/ug/swru536/swru536.pdf), antenna placement guidance | Explicit net/component targets; honor board and footprint rule areas and all-pass coordinate exclusions; require manufacturer-specific radiator exclusions | Manufacturer geometry takes priority. A net name cannot establish a safe fence offset or keepout boundary |
@@ -40,6 +40,22 @@ inward-buffering ground polygons by `via_radius + 0.01 mm`. Same-net via spacing
 also respects configured center spacing and global hole-to-hole minima.
 Holes use both copper-to-hole and drill-to-drill constraints. Native DRC evaluates
 effective custom/netclass rules afterward; these approximations do not replace it.
+
+### Radial annular width versus via diameter allowance
+
+KiCad's radial annular width is `(D - d) / 2`; fab tables may instead state a
+required via diameter difference `D - d`. JLC's [rigid-board capabilities](https://jlcpcb.com/capabilities/pcb-capabilities)
+explicitly describe the latter for via sizing. A 0.5/0.3 mm or 0.6/0.4 mm via
+therefore has a 0.1 mm radial ring, not 0.2 mm. PTH pad annular-ring specifications
+must also be distinguished from the via diameter allowance.
+
+The tool does not reinterpret `min_via_annular_width` as a diameter difference or
+change project rules. It defers that check to native DRC so ignored/warning/custom
+rule settings take effect. With `allow_annular_width_warnings = true` (default),
+new native annular-width **warnings** whose items are exclusively newly generated
+vias remain visible as `advisory_issues`; status is `verified_with_warnings`.
+Errors, warnings on existing items and every other new rule violation remain
+blocking. Strict mode (`false`) rejects new annular-width warnings as well.
 
 ### Automatic pitch
 

@@ -64,10 +64,14 @@ The report directory contains:
 - `baseline-drc.json` and `final-drc.json`: complete KiCad reports, including
   pre-existing issues.
 
-Exit codes: `0` native verification passed; `2` new DRC/connectivity issues remain
+Exit codes: `0` native verification passed (possibly with annular-width warning
+advisories); `2` blocking DRC/connectivity issues remain
 and no board was published; `1` input, configuration, runtime or processing error.
 **Verified means no new reported DRC issues and every added via reaches ground on
-at least two layers.** Examine diagnostics for incomplete coverage, unrepairable
+at least two layers.** `verified_with_warnings` also permits native annular-width
+warnings on generated vias, recorded in `advisory_issues` and the unmodified DRC
+report. Annular-width errors and all other new DRC issues still reject candidates.
+Examine diagnostics for incomplete coverage, unrepairable
 islands and rejected candidates; verification does not establish EMC performance
 or imply that existing DRC errors were fixed.
 
@@ -94,13 +98,36 @@ component courtyards (or native footprint hulls), rule areas, board edges/cutout
 and explicit exclusions. Through vias clear obstacles on **every copper layer**,
 and require full landing copper on at least two layers during planning. Native
 DRC evaluates effective netclass and custom constraints afterward. Offending
-candidates are removed and the board is revalidated, up to five evaluations;
+candidates are removed (except permitted annular-width warnings) and the board is
+revalidated, up to five evaluations;
 unattributable new violations fail publication.
 
 ## Configuration and electrical assumptions
 
 Start with [example/stitch.toml](example/stitch.toml). All lengths are millimetres
 in KiCad board coordinates; net and reference selectors are case-sensitive globs.
+
+### Annular width and fab via sizes
+
+KiCad annular width is radial: `(diameter_mm - drill_mm) / 2`. A 0.5/0.3 mm or
+0.6/0.4 mm via has a 0.1 mm radial ring and a 0.2 mm diameter difference. JLC's
+[via specification](https://jlcpcb.com/capabilities/pcb-capabilities) describes a
+diameter difference, which must not be copied directly into KiCad's radial-width
+minimum. The separate PTH annular-ring specification is also not interchangeable
+with that via diameter allowance.
+
+Annular width is evaluated by native DRC, including project severity and custom
+rules, rather than rejected against the global project minimum during preflight.
+By default `allow_annular_width_warnings = true` preserves **warning-severity**
+annular issues on generated vias and publishes with `verified_with_warnings`.
+The report includes the radial width and diameter difference. The source and
+published project rules/severities are not changed. Set this option to `false`
+to reject those warnings too. If the project treats annular width as an **error**,
+it remains blocking; correct the project's radial minimum to match your chosen
+fab process if those via sizes are intended. The tool does not certify fab
+acceptance from a warning or infer a vendor profile.
+
+### Spacing and signal selection
 
 Without electrical inputs, automatic pitch targets about 100 board-area cells,
 bounded to 2–10 mm and legal via spacing. This is a density heuristic. Optional

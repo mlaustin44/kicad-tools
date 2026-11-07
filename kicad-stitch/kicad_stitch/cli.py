@@ -45,9 +45,10 @@ def main(argv=None):
                    "by_rule": dict(counts), "report": str(report),
                    "output": result.validation["published_board"],
                    "diagnostics": dict(Counter(d["rule"] for d in result.diagnostics)),
-                   "rejected_vias": len(result.validation["rejected_candidates"])}
+                   "rejected_vias": len(result.validation["rejected_candidates"]),
+                   "advisory_issue_count": sum(i["count"] for i in result.validation["advisory_issues"])}
         print(json.dumps(summary, indent=2))
-        return 0 if result.validation["status"] == "verified" else 2
+        return 0 if result.validation["status"] in {"verified", "verified_with_warnings"} else 2
     except (BackendError, ValueError, TypeError, OSError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
