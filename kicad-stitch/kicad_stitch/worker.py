@@ -193,6 +193,10 @@ def main():
     action = request["action"]
     if action == "snapshot":
         result = snapshot(board, request["net"])
+    elif action == "normalize":
+        # Materialize KiCad defaults once before baseline/proposal copies diverge.
+        p.SaveBoard(request["output"], board)
+        result = {}
     elif action == "connectivity":
         result = connectivity(board, request)
     elif action == "retain":

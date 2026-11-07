@@ -15,6 +15,7 @@ from kicad_stitch.backend import KiCad, drc_issues, fingerprint, run
 from kicad_stitch.cli import main
 from kicad_stitch.geometry import decode
 from kicad_stitch.model import Settings
+from kicad_stitch.workflow import apply_review, restore_backup
 
 
 pytestmark = pytest.mark.skipif(os.environ.get("KICAD_STITCH_INTEGRATION") != "1",
@@ -305,6 +306,46 @@ auto_pairs = false
     assert not plan_report["validation"]["blocking_issues"]
     assert (report / "preview.svg").is_file()
     assert output.is_file()
+    assert fingerprint(source) == original
+
+
+def test_cli_default_review_can_be_applied_and_restored(native_board, capsys):
+    source, backend = native_board
+    original = fingerprint(source)
+    report = source.parent / "review"
+    assert main([str(source), "--report-dir", str(report)]) == 0
+    summary = json.loads(capsys.readouterr().out)
+    proposed = report / "board" / source.name
+    assert proposed.is_file()
+    assert "apply_command" in summary
+    assert fingerprint(source) == original
+    data = json.loads((report / "plan.json").read_text())
+    assert data["validation"]["published_sha256"] == fingerprint(proposed)
+    applied = apply_review(report)
+    assert source.read_bytes() == proposed.read_bytes()
+    snapshot = backend.snapshot(source, "GND")
+    assert len(snapshot["existing_vias"]) == summary["vias"]
+    for path, checksum in original.items():
+        if path != str(source):
+            assert fingerprint(source)[path] == checksum
+    restore_backup(applied["backup"])
+    assert fingerprint(source) == original
+
+
+def test_cli_in_place_backs_up_before_replacing_native_board(native_board, capsys):
+    source, backend = native_board
+    original = fingerprint(source)
+    report = source.parent / "in-place-review"
+    assert main([str(source), "--in-place", "--report-dir", str(report)]) == 0
+    summary = json.loads(capsys.readouterr().out)
+    application = summary["application"]
+    assert application["status"] == "applied"
+    assert application["board"] == str(source)
+    assert fingerprint(source)[str(source)] != original[str(source)]
+    assert (Path(application["backup"]) / source.name).is_file()
+    snapshot = backend.snapshot(source, "GND")
+    assert len(snapshot["existing_vias"]) == summary["vias"]
+    restore_backup(application["backup"])
     assert fingerprint(source) == original
 
 

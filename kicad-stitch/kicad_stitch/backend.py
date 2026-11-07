@@ -251,6 +251,7 @@ def run(source: Path, settings: Settings, backend: KiCad, *, output: Path | None
     with tempfile.TemporaryDirectory(prefix=".kicad-stitch-", dir=scratch_parent) as tmp:
         root = Path(tmp)
         original = copy_project(source, root / "baseline")
+        backend.worker("normalize", original, output=str(original))
         baseline_drc = backend.drc(original, root / "baseline-drc.json")
         exploratory = copy_project(original, root / "exploratory")
         backend.worker("retain", exploratory, net=settings.net, output=str(exploratory))
@@ -312,10 +313,15 @@ def run(source: Path, settings: Settings, backend: KiCad, *, output: Path | None
         status = "failed" if blocking or failures else ("verified_with_warnings" if advisory else "verified")
         issue_records = lambda issues: [{"identity": identity, "count": count} for identity, count in issues.items()]
         result.validation = {"status": status,
+                             "source_board": str(source),
+                             "validated_basename": proposed.name,
                              "kicad_version": version, "runtime": backend.runtime,
                              "python_command": backend.python,
                              "cli_command": backend.cli,
                              "source_sha256": hashes,
+                             "baseline_sha256": {
+                                 str(source.with_suffix(Path(path).suffix)): value
+                                 for path, value in fingerprint(original).items()},
                              "baseline_issue_count": sum(drc_issues(baseline_drc).values()),
                              "final_issue_count": sum(drc_issues(final_drc).values()),
                              "new_issues": issue_records(new),
@@ -354,4 +360,9 @@ def run(source: Path, settings: Settings, backend: KiCad, *, output: Path | None
                     path.unlink()
                 raise
             result.validation["published_board"] = str(output)
+            # Bind the report to native-validated scratch bytes, not to a later
+            # read of an export that another program could already have edited.
+            result.validation["published_sha256"] = {
+                str(output.with_suffix(Path(path).suffix)): value
+                for path, value in fingerprint(proposed).items()}
         return result, final_snapshot, baseline_drc, final_drc

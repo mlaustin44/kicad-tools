@@ -2,8 +2,9 @@
 
 A standalone KiCad 10 ground-via CLI, with a separate planning engine for future
 integration into a larger GUI application. It produces a placement report and SVG
-preview, verifies placements with native KiCad refill and DRC, and optionally saves
-a separate stitched board and project.
+preview, verifies placements with native KiCad refill and DRC, and saves a separate
+review board. Apply the review to your original project with an automatic backup,
+or choose `--in-place` to validate, back up and apply in one step.
 
 ## Install
 
@@ -51,25 +52,69 @@ The board must have a valid, closed Edge.Cuts outline, a ground net and copper
 zones, and a sibling `.kicad_pro`. A sibling `.kicad_dru` is preserved and used.
 
 ```sh
-# Preview and validate. Source board/project stay unchanged.
-kicad-stitch /path/to/board.kicad_pcb --report-dir ./stitch-review
+# Generate a review. Keep using your original project.
+kicad-stitch /path/to/board.kicad_pcb --config stitch.toml --report-dir ./stitch-review
 
-# Place and publish a separate board, project and custom rules after verification.
+# Inspect stitch-review/preview.svg and stitch-review/board/board.kicad_pcb.
+# Close the review board and the original KiCad project, then apply:
+kicad-stitch apply ./stitch-review
+
+# Or validate, back up and update the original PCB in one step:
+kicad-stitch /path/to/board.kicad_pcb --config stitch.toml --in-place \
+  --report-dir ./stitch-applied
+
+# Undo using the backup directory printed by apply / --in-place:
+kicad-stitch restore /path/to/.kicad-stitch-backups/TIMESTAMP-ID
+
+# Optional export to another basename instead of the default review board:
 kicad-stitch /path/to/board.kicad_pcb \
   --config stitch.toml \
-  --report-dir ./stitch-applied \
+  --report-dir ./stitch-export \
   --output /path/to/board-stitched.kicad_pcb
 ```
 
-Output paths must be new. Existing boards, projects and reports are never
-overwritten. Without `--output`, even a successful run publishes only the report.
-Both modes do the same native validation.
+**Your original project remains the working project.** The default command saves
+a native-validated PCB with matching project/rules under `REPORT_DIR/board/`, using
+the original basename. This copy is for review. After applying, reopen the
+original `.kicad_pro`; its PCB now contains the stitches. No project switch,
+schematic transfer or manual file renaming is needed.
+
+`apply` installs the exact reviewed PCB rather than replanning or merging into an
+edited board. It checks hashes of the source PCB/project/custom rules and the
+reviewed files against the native validation record. If anything changed, generate
+a new review. Editing or saving the review in KiCad can change its bytes and
+invalidate it. KiCad board/project locks also block replacement: save and close
+the original before generating a review you intend to apply. Close the review
+copy without saving when you finish inspecting it.
+
+Before replacing the PCB, the tool stores the original PCB, `.kicad_pro` and optional
+`.kicad_dru` in a unique `.kicad-stitch-backups/TIMESTAMP-ID/` subdirectory next to
+the source. Its `backup.json` records file hashes and the replacement identity.
+Only the original **PCB file** is atomically replaced; project settings,
+schematics, libraries, models and other project assets stay in place. The backup
+is a board/rules snapshot, not a recursive archive of those unchanged assets.
+Reports and backup directories can be excluded from version control.
+
+`restore` checks the snapshot and refuses to overwrite later edits by default.
+Use `restore BACKUP_DIR --force` to restore the PCB despite later edits. Every
+restore that changes the board first backs up the current PCB/project/rules and
+prints a command to undo the restore. Project settings and custom rules remain
+unchanged during restore as well. Backup directories are retained until you
+remove them. Failed backups or replacement checks leave the source PCB intact.
+
+`--output` is an explicit export option, mutually exclusive with `--in-place`.
+Export and report paths must be new. A differently named export cannot be applied
+directly because name-dependent custom rules/text variables were validated under
+that export name; generate the default review to apply to the original. Old
+reports without saved validation hashes also need regeneration once before apply.
 
 The report directory contains:
 
 - `plan.json`: placed via positions, layers, native UUIDs, rule IDs and reasons,
   settings/spacing assumptions, rejected candidates, unresolved features, source
   hashes, and validation results. `schema_version` is currently `1`.
+- `board/`: the saved review PCB and matching project/custom rules, on a successful
+  default run. With `--output`, these files are exported to that path instead.
 - `preview.svg`: board, overlapping ground copper, components, and colored vias.
   It uses the actual final filled copper, including power-plane antipads and
   island removal, rather than the exploratory island-retention fill.
@@ -97,6 +142,7 @@ If verification fails, the CLI includes `failure_reasons`, `blocking_issue_count
 native descriptions/items for up to five blocking issues, and
 `unconnected_via_count`. The complete issue details are in `plan.json` under
 `validation.blocking_issue_details`; raw KiCad reports are always preserved.
+Failed validation never applies a board, including with `--in-place`.
 
 KiCad can choose a different pair of objects to represent an existing unconnected
 net after refill. Such a changed ratsnest edge is not automatically a new fault.
@@ -233,6 +279,11 @@ transaction API is `kicad_stitch.backend.run(board_path, settings, backend,
 output=optional_path)`. GUI clients can render/filter the result or replace the
 KiCad adapter. A modified proposal must go through native validation before save;
 `plan()` alone provides geometry checks only.
+
+`kicad_stitch.workflow.apply_review(report_path)` and
+`restore_backup(backup_path, force=False)` provide the same guarded apply/restore
+operations for GUI callers. The library transaction's `output=None` remains a
+read-only validation API; the CLI selects a persistent review path by default.
 
 ## Tests
 

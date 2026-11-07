@@ -5,19 +5,24 @@ import argparse
 from collections import Counter
 import json
 from pathlib import Path
+import shlex
 import sys
 
 from . import __version__
 from .backend import BackendError, KiCad, run
 from .model import load_settings
 from .preview import svg
+from .workflow import apply_review, ensure_closed, restore_backup
 
 
 def parser():
-    p = argparse.ArgumentParser(description="Plan and verify ground stitching vias on a KiCad 10 board")
+    p = argparse.ArgumentParser(description="Plan and verify ground stitching vias on a KiCad 10 board",
+        epilog="Review/apply: kicad-stitch apply REPORT_DIR. Undo: kicad-stitch restore BACKUP_DIR.")
     p.add_argument("board", type=Path)
     p.add_argument("--config", type=Path, help="TOML placement settings")
-    p.add_argument("--output", type=Path, help="Publish a new verified board and project at this path")
+    output = p.add_mutually_exclusive_group()
+    output.add_argument("--output", type=Path, help="Export a separate board/project (default: REPORT_DIR/board/)")
+    output.add_argument("--in-place", action="store_true", help="Back up and replace the source PCB after validation")
     p.add_argument("--report-dir", type=Path, help="New directory for JSON, SVG and DRC reports")
     p.add_argument("--runtime", choices=["auto", "native", "flatpak"], default="auto")
     p.add_argument("--kicad-python", help="Explicit Python with pcbnew (native runtime; otherwise autodetected)")
@@ -63,22 +68,60 @@ def build_summary(result, report):
 
 
 def main(argv=None):
+    argv = list(sys.argv[1:] if argv is None else argv)
+    if argv and argv[0] in {"apply", "restore"}:
+        return workflow_command(argv)
     args = parser().parse_args(argv)
+    created_report = False
     try:
         settings = load_settings(args.config)
         report = (args.report_dir or args.board.with_name(args.board.stem + ".stitch-report")).resolve()
         if report.exists():
             raise ValueError("Report directory already exists; choose a new --report-dir")
+        if args.in_place:
+            ensure_closed(args.board.resolve())
         backend = KiCad(args.runtime, args.kicad_python, args.kicad_cli)
-        print("Planning and running KiCad refill/DRC on scratch copies…", file=sys.stderr)
-        result, snapshot, before, after = run(args.board, settings, backend, output=args.output)
         report.mkdir(parents=True, exist_ok=False)
+        created_report = True
+        output = args.output or report / "board" / args.board.resolve().name
+        print("Planning and running KiCad refill/DRC on scratch copies…", file=sys.stderr)
+        result, snapshot, before, after = run(args.board, settings, backend, output=output)
         for name, data in (("plan.json", result.to_dict()), ("baseline-drc.json", before), ("final-drc.json", after)):
             (report / name).write_text(json.dumps(data, indent=2) + "\n")
         (report / "preview.svg").write_text(svg(snapshot, result, settings))
-        print(json.dumps(build_summary(result, report), indent=2))
+        summary = build_summary(result, report)
+        verified = result.validation["status"] in {"verified", "verified_with_warnings"}
+        if verified:
+            if args.in_place:
+                summary["application"] = apply_review(report)
+            elif result.validation["validated_basename"] == Path(result.validation["source_board"]).name:
+                summary["apply_command"] = shlex.join(["kicad-stitch", "apply", str(report)])
+        print(json.dumps(summary, indent=2))
         return 0 if result.validation["status"] in {"verified", "verified_with_warnings"} else 2
     except (BackendError, ValueError, TypeError, OSError) as exc:
+        if created_report:
+            try:
+                report.rmdir()  # Remove only an empty reservation, never review artifacts.
+            except OSError:
+                pass
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+
+
+def workflow_command(argv):
+    command = argv[0]
+    p = argparse.ArgumentParser(prog=f"kicad-stitch {command}", description=(
+        "Apply an unchanged verified review to its original board, saving a backup" if command == "apply" else
+        "Restore a backed-up PCB, preserving the current board in another backup"))
+    p.add_argument("path", type=Path, help="Review directory/plan.json" if command == "apply" else "Backup directory/backup.json")
+    if command == "restore":
+        p.add_argument("--force", action="store_true", help="Restore despite later edits, backing up current files first")
+    args = p.parse_args(argv[1:])
+    try:
+        result = apply_review(args.path) if command == "apply" else restore_backup(args.path, force=args.force)
+        print(json.dumps(result, indent=2))
+        return 0
+    except (ValueError, OSError, KeyError, TypeError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
 

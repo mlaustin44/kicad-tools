@@ -18,6 +18,10 @@ Settings + snapshot -> planner.plan() -> Plan (positions, reasons, diagnostics)
                            |
                   verified separate board
                   + JSON / SVG reports
+                           |
+                  workflow.apply_review()
+                           |
+                  original PCB + backup
 ```
 
 ## Boundaries
@@ -37,6 +41,9 @@ Settings + snapshot -> planner.plan() -> Plan (positions, reasons, diagnostics)
 - `backend.py`: file transaction, project/rule copying, exploratory fill, placement,
   native validation, rejection/revalidation and exclusive output publication.
 - `preview.py`: standalone SVG renderer with no role in decision making.
+- `workflow.py`: reviewed-file/source hash checks, tool/KiCad locks, board/rules
+  snapshots, atomic source-PCB replacement and reversible restoration. No native
+  rerun or replanning is needed to install identical validated bytes.
 - `cli.py`: argument parsing and report presentation.
 
 Snapshots use millimetres and native layer/net names. Polygon records are
@@ -55,7 +62,9 @@ same package version; they are not a separately stabilized file format.
    require a matching KiCad major/minor version, and cache the selection. Auto
    mode may switch the entire pair to Flatpak; explicit overrides never do.
 2. Copy those files to a scratch baseline with the same basename so KiCad loads
-   the correct project rules. Refill and save with `kicad-cli pcb drc`.
+   the correct project rules. Round-trip the scratch board once through KiCad's
+   reader/writer to materialize project defaults before copies diverge, then
+   refill and save with `kicad-cli pcb drc`.
 3. Create an exploratory copy, retain ground islands there, and refill natively.
 4. Extract geometry and plan, including an identified reference-ground region.
 5. Apply vias to a fresh **baseline** copy with original island-removal policies.
@@ -77,6 +86,11 @@ same package version; they are not a separately stabilized file format.
    `verified_with_warnings`. Annular errors and all other issues remain blocking.
 9. Recheck source hashes. If requested and verified, exclusively create new
    project/rules and finally the output board. Existing files are never replaced.
+   Record the source path, validated basename and SHA-256 hashes of the native
+   baseline and validated scratch files, mapped to source and published paths
+   respectively. The CLI normally publishes to `REPORT_DIR/board/` using the
+   source basename; `output=None` remains available
+   for library clients that only need read-only validation.
 
 After the last native evaluation, measure actual contour gaps and per-layer legal
 coverage, and intersect original exploratory islands with reference-connected
@@ -90,6 +104,38 @@ filesystem transaction: the board is written last so its rules are already there
 A GUI should keep native validation off its UI thread and expose progress at these
 operation boundaries. Selecting/deselecting proposed vias invalidates previous
 native validation and requires a fresh evaluation.
+
+## Applying and restoring a review
+
+The original project stays the working project. A CLI review includes a saved
+native-validated board and matching project/rules. `apply_review(report_path)`
+requires a verified status, matching source/export hashes, unchanged native
+baseline rules and the source basename used during native validation. It never
+attempts a merge into a modified board. Old reports lacking this provenance or
+exports validated under a different basename require a new default review.
+
+KiCad can normalize project files while saving scratch boards, materializing
+implicit defaults. Therefore the review's project/rules hashes must match the
+native baseline context; the source is separately checked against its original
+raw hashes. The original `.kicad_pro` is never replaced with the normalized copy.
+
+Application serializes with an exclusive per-board tool lock and refuses KiCad
+PCB/project lock files. It snapshots the original PCB/project/custom rules in a
+unique `.kicad-stitch-backups/` subdirectory, writing a manifest and complete file
+contents before replacement. It writes and syncs the new PCB into a temporary file
+beside the source, retains its permission bits, then rechecks source hashes and
+KiCad locks immediately before an atomic `os.replace`. Source project settings,
+custom rules, schematic and other project assets are not replaced.
+
+`restore_backup(path, force=False)` verifies the snapshot and checks that the
+current files still match the operation's installed state. Later edits require
+explicit `force=True`; a restore first snapshots the current files, so restoration
+can itself be undone. Only the PCB is restored; project/rule settings retain their
+current values. A manifest written before replacement also permits recovery after
+an interrupted operation: the current board is either the original or the intended
+replacement. External processes do not honor this tool's lock, so the project
+must remain closed throughout replacement. These are local board/rules snapshots,
+not recursive archives of all project assets or filesystem-wide transactions.
 
 The native comparison detects regressions rather than requiring a completely
 clean starting board. Ordinary DRC issues retain locations and multiplicity.
