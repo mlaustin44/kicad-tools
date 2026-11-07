@@ -194,6 +194,19 @@ def partition_new_issues(new, candidate_ids, settings):
     return blocking, advisory
 
 
+def compare_native_issues(backend, original, proposed, baseline_drc, final_drc):
+    """Compare native issues, including changed representatives of old airwires."""
+    new = drc_issues(final_drc) - drc_issues(baseline_drc)
+    changed_edges = [key for key in new if key[0] == "unconnected_items"]
+    unchanged = Counter()
+    if changed_edges:
+        endpoints = sorted({item[0] for key in changed_edges for item in key[3]})
+        before = backend.worker("connectivity", original, item_uuids=endpoints)
+        after = backend.worker("connectivity", proposed, nets=list(before["nets"]))
+        unchanged = unchanged_unconnected_issues(new, baseline_drc, before, after)
+    return new, unchanged
+
+
 def final_connectivity(snapshot, candidates, settings, reference=None):
     """Verify proposed vias against actual, normally refilled copper.
 
@@ -222,6 +235,65 @@ def final_connectivity(snapshot, candidates, settings, reference=None):
                        "area_mm2": graph.regions[i][1].area,
                        "at": list(graph.regions[i][1].representative_point().coords)[0]}
                       for i in graph.missing()]
+
+
+def revalidate_export(source, content, settings, candidates, reference, backend, audit):
+    """Refill/check existing reviewed vias under the original project basename.
+
+    Never plan, add or remove a via. Preserve native artifacts for review even
+    when original-name rules reject the export. Source files are read only.
+    """
+    version = backend.check()
+    scratch_parent = Path.cwd() if backend.runtime == "flatpak" else None
+    with tempfile.TemporaryDirectory(prefix=".kicad-stitch-", dir=scratch_parent) as tmp:
+        root = Path(tmp)
+        original = copy_project(source, root / "baseline")
+        backend.worker("normalize", original, output=str(original))
+        before = backend.drc(original, audit / "baseline-drc.json")
+        proposed = copy_project(original, root / "proposed")
+        proposed.write_bytes(content)
+        backend.worker("normalize", proposed, output=str(proposed))
+        after = backend.drc(proposed, audit / "final-drc.json")
+        new, unchanged = compare_native_issues(backend, original, proposed, before, after)
+        blocking, advisory = partition_new_issues(new - unchanged, [c.uuid for c in candidates], settings)
+        snapshot = backend.snapshot(proposed, settings.net)
+        failures, missing = final_connectivity(snapshot, candidates, settings, reference)
+        # Confirm that native round-tripping kept all reviewed via identities,
+        # nets and positions, rather than merely checking copper at those points.
+        vias = {v["uuid"]: v for v in snapshot["existing_vias"]}
+        changed_vias = [c.uuid for c in candidates if c.uuid not in vias
+                        or vias[c.uuid]["net"] != settings.net
+                        or abs(vias[c.uuid]["at"][0] - c.x) > 1e-5
+                        or abs(vias[c.uuid]["at"][1] - c.y) > 1e-5]
+        status = "failed" if blocking or failures or changed_vias else (
+            "verified_with_warnings" if advisory else "verified")
+        saved = copy_project(proposed, audit / "board")
+        installed = proposed.read_bytes()
+        records = lambda issues: [{"identity": identity, "count": count} for identity, count in issues.items()]
+        verification = {"status": status, "source_board": str(source), "validated_basename": source.name,
+                        "source_sha256": fingerprint(source),
+                        "review_board_sha256": hashlib.sha256(content).hexdigest(),
+                        "kicad_version": version, "runtime": backend.runtime,
+                        "python_command": backend.python, "cli_command": backend.cli,
+                        "via_count": len(candidates), "candidate_uuids": [c.uuid for c in candidates],
+                        "changed_candidate_uuids": changed_vias,
+                        "new_issues": records(new), "blocking_issues": records(blocking),
+                        "blocking_issue_details": describe_issues(after, blocking),
+                        "advisory_issues": records(advisory),
+                        "unchanged_connectivity_issues": describe_issues(after, unchanged),
+                        "unconnected_candidate_uuids": failures, "remaining_ground_components": missing,
+                        "proposed_board": str(saved), "validated_sha256": {
+                            str(saved.with_suffix(Path(path).suffix)): value
+                            for path, value in fingerprint(proposed).items()}}
+        report = audit / "validation.json"
+        report.write_text(json.dumps(verification, indent=2) + "\n")
+        if status == "failed":
+            details = "; ".join(issue.get("description", issue.get("type", "DRC violation"))
+                                for issue in verification["blocking_issue_details"][:3])
+            if failures or changed_vias:
+                details += f"; {len(set(failures + changed_vias))} reviewed via(s) failed connectivity/identity checks"
+            raise BackendError(f"Original-name validation failed; nothing was applied: {details.strip('; ')}. See {report}")
+        return installed, {"status": status, "report": str(report), "via_count": len(candidates)}
 
 
 def run(source: Path, settings: Settings, backend: KiCad, *, output: Path | None = None):
@@ -268,17 +340,7 @@ def run(source: Path, settings: Settings, backend: KiCad, *, output: Path | None
             for candidate, uid in zip(result.candidates, ids, strict=True):
                 candidate.uuid = uid
             final_drc = backend.drc(proposed, root / "final-drc.json")
-            new = drc_issues(final_drc) - drc_issues(baseline_drc)
-            changed_edges = [key for key in new if key[0] == "unconnected_items"]
-            unchanged = Counter()
-            if changed_edges:
-                # Ratsnest edges are representatives, not stable electrical
-                # identities. Confirm native component membership before calling
-                # a different representative a newly introduced disconnection.
-                endpoints = sorted({item[0] for key in changed_edges for item in key[3]})
-                before_connections = backend.worker("connectivity", original, item_uuids=endpoints)
-                after_connections = backend.worker("connectivity", proposed, nets=list(before_connections["nets"]))
-                unchanged = unchanged_unconnected_issues(new, baseline_drc, before_connections, after_connections)
+            new, unchanged = compare_native_issues(backend, original, proposed, baseline_drc, final_drc)
             blocking, advisory = partition_new_issues(new - unchanged, ids, settings)
             final_snapshot = backend.snapshot(proposed, settings.net)
             failures, missing = final_connectivity(final_snapshot, result.candidates, settings,

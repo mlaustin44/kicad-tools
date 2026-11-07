@@ -42,8 +42,8 @@ Settings + snapshot -> planner.plan() -> Plan (positions, reasons, diagnostics)
   native validation, rejection/revalidation and exclusive output publication.
 - `preview.py`: standalone SVG renderer with no role in decision making.
 - `workflow.py`: reviewed-file/source hash checks, tool/KiCad locks, board/rules
-  snapshots, atomic source-PCB replacement and reversible restoration. No native
-  rerun or replanning is needed to install identical validated bytes.
+  snapshots, atomic source-PCB replacement and reversible restoration. Calls
+  native revalidation for differently named exports without replanning vias.
 - `cli.py`: argument parsing and report presentation.
 
 Snapshots use millimetres and native layer/net names. Polygon records are
@@ -109,15 +109,27 @@ native validation and requires a fresh evaluation.
 
 The original project stays the working project. A CLI review includes a saved
 native-validated board and matching project/rules. `apply_review(report_path)`
-requires a verified status, matching source/export hashes, unchanged native
-baseline rules and the source basename used during native validation. It never
-attempts a merge into a modified board. Old reports lacking this provenance or
-exports validated under a different basename require a new default review.
+requires a verified status and matching source/export hashes. It never attempts a
+merge into a modified board. Old reports lacking this provenance require a new
+review; v0.3.0 reports are compatible.
 
 KiCad can normalize project files while saving scratch boards, materializing
 implicit defaults. Therefore the review's project/rules hashes must match the
 native baseline context; the source is separately checked against its original
 raw hashes. The original `.kicad_pro` is never replaced with the normalized copy.
+
+If the export was validated under another basename, `backend.revalidate_export`
+copies the unchanged source/rules into scratch space and normalizes the baseline.
+It loads the exact exported PCB content under the source basename with those
+rules, round-trips, refills and runs DRC. The ordinary native issue comparison,
+pre-existing disconnection proof, annular-warning policy and final ground
+connectivity checks apply. All reviewed UUIDs/nets/positions must survive.
+There is no planner call, candidate rejection/pruning or new via generation.
+Native failure blocks replacement. The result, full native reports and a saved
+board/project are recorded in a unique `apply-validation` subdirectory of the
+review. Successful application installs those freshly validated bytes. An optional
+backend argument / CLI runtime overrides select the KiCad runtime. Matching-name
+exports retain the direct exact-byte path and need no additional native run.
 
 Application serializes with an exclusive per-board tool lock and refuses KiCad
 PCB/project lock files. It snapshots the original PCB/project/custom rules in a

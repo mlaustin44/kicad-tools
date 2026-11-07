@@ -1,7 +1,7 @@
-"""Apply an exact reviewed board, with local snapshots and guarded restoration.
+"""Apply reviewed vias, with local snapshots and guarded restoration.
 
 Only the source PCB is replaced. Project rules and all other project assets stay
-in place. These file operations need no KiCad process or replanning.
+in place. Renamed exports are revalidated with KiCad, without replanning vias.
 """
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -15,7 +15,8 @@ import stat
 import tempfile
 from uuid import uuid4
 
-from .backend import fingerprint
+from .backend import KiCad, fingerprint, revalidate_export
+from .model import Candidate, Settings, Signal
 
 
 VERIFIED = {"verified", "verified_with_warnings"}
@@ -121,8 +122,8 @@ def receipt(status, board, backup):
             "restore_command": shlex.join(["kicad-stitch", "restore", str(backup)])}
 
 
-def apply_review(report):
-    """Install exactly the saved, validated bytes when the source is unchanged."""
+def apply_review(report, backend=None):
+    """Install reviewed vias, revalidating a changed basename when needed."""
     report = Path(report).resolve()
     plan_path = report / "plan.json" if report.is_dir() else report
     data = json.loads(plan_path.read_text())
@@ -136,9 +137,9 @@ def apply_review(report):
     if not published:
         raise ValueError("Review has no saved board; generate a new review")
     proposed = Path(published)
-    # Name-dependent custom rules/text variables must match native validation.
-    if validation["validated_basename"] != board.name or proposed.name != board.name:
-        raise ValueError("Review was validated under a different board name; generate a review without --output")
+    if validation["validated_basename"] != proposed.name:
+        raise ValueError("Review board name does not match its native validation record")
+    renamed = proposed.name != board.name
     if proposed.resolve() == board:
         raise ValueError("The review board must be separate from the source")
     wanted = validation["published_sha256"]
@@ -148,7 +149,7 @@ def apply_review(report):
     baseline = validation["baseline_sha256"]
     if not isinstance(baseline, dict) or str(board.with_suffix(".kicad_pro")) not in baseline:
         raise ValueError("Review lacks the native baseline project identity; generate a new review")
-    for suffix in (".kicad_pro", ".kicad_dru"):
+    for suffix in (() if renamed else (".kicad_pro", ".kicad_dru")):
         # KiCad may materialize implicit defaults in scratch .kicad_pro files.
         # Compare against its native baseline context, while the original source
         # must still match its raw pre-run hashes before replacement.
@@ -159,9 +160,24 @@ def apply_review(report):
         raise ValueError("Reviewed board changed while reading; generate a new review")
     with project_lock(board):
         assert_fingerprint(board, expected, "Source board/project/rules changed since review; generate a new review")
+        revalidation = None
+        if renamed:
+            values = dict(data["parameters"]["settings"])
+            values["signals"] = tuple(Signal(**v) for v in values.get("signals", []))
+            settings = Settings(**values)
+            candidates = [Candidate(**c) for c in data["candidates"]]
+            reference = data["parameters"]["reference_ground"]
+            stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ")
+            audit = plan_path.parent / "apply-validation" / (stamp + "-" + uuid4().hex[:8])
+            audit.mkdir(parents=True, exist_ok=False)
+            content, revalidation = revalidate_export(board, content, settings, candidates, reference,
+                                                      backend or KiCad(), audit)
         backup = backup_board(board, expected, digest(content), operation="apply", origin=plan_path)
         replace_board(board, content, expected)
-    return receipt("applied", board, backup)
+    result = receipt("applied", board, backup)
+    if revalidation is not None:
+        result["revalidation"] = revalidation
+    return result
 
 
 def restore_backup(backup, *, force=False):

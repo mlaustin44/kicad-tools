@@ -11,7 +11,7 @@ import tempfile
 import pytest
 from shapely.geometry import Point
 
-from kicad_stitch.backend import KiCad, drc_issues, fingerprint, run
+from kicad_stitch.backend import BackendError, KiCad, drc_issues, fingerprint, run
 from kicad_stitch.cli import main
 from kicad_stitch.geometry import decode
 from kicad_stitch.model import Settings
@@ -347,6 +347,84 @@ def test_cli_in_place_backs_up_before_replacing_native_board(native_board, capsy
     assert len(snapshot["existing_vias"]) == summary["vias"]
     restore_backup(application["backup"])
     assert fingerprint(source) == original
+
+
+def test_renamed_export_apply_revalidates_preserves_vias_and_can_restore(native_board, capsys):
+    source, backend = native_board
+    backend.command([*backend.python, str(Path(__file__).with_name("make_board.py").resolve()),
+                     str(source.parent), "--disconnected-signal"])
+    project = source.with_suffix(".kicad_pro")
+    data = json.loads(project.read_text())
+    data["board"]["design_settings"]["rules"]["min_via_annular_width"] = 0.16
+    data["board"]["design_settings"]["rule_severities"] = {"annular_width": "warning"}
+    project.write_text(json.dumps(data))
+    original = fingerprint(source)
+    output = source.with_name("sample_stitched.kicad_pcb")
+    report = source.parent / "renamed-review"
+    assert main([str(source), "--output", str(output), "--report-dir", str(report)]) == 0
+    summary = json.loads(capsys.readouterr().out)
+    assert summary["status"] == "verified_with_warnings"
+    assert summary["apply_command"]
+    export_hashes = fingerprint(output)
+    reviewed = backend.snapshot(output, "GND")
+    assert main(["apply", str(report), "--runtime", backend.runtime]) == 0
+    applied = json.loads(capsys.readouterr().out)
+    assert applied["status"] == "applied"
+    assert applied["revalidation"]["status"] == "verified_with_warnings"
+    audit_path = Path(applied["revalidation"]["report"])
+    audit = json.loads(audit_path.read_text())
+    assert audit["validated_basename"] == source.name
+    assert audit["advisory_issues"]
+    assert not audit["blocking_issues"]
+    assert not audit["changed_candidate_uuids"]
+    assert (audit_path.parent / "baseline-drc.json").is_file()
+    assert (audit_path.parent / "final-drc.json").is_file()
+    # No rerun of placement: the actual UUIDs, nets and positions survive apply.
+    installed = backend.snapshot(source, "GND")
+    via_set = lambda snap: {(v["uuid"], v["net"], tuple(v["at"])) for v in snap["existing_vias"]}
+    assert via_set(installed) == via_set(reviewed)
+    assert fingerprint(output) == export_hashes
+    for path, checksum in original.items():
+        if path != str(source):
+            assert fingerprint(source)[path] == checksum
+    restore_backup(applied["backup"])
+    assert fingerprint(source) == original
+
+
+def test_renamed_apply_rejects_original_context_drc_without_pruning_vias(native_board, monkeypatch):
+    source, backend = native_board
+    original = fingerprint(source)
+    output = source.with_name("sample_stitched.kicad_pcb")
+    result, _, _, _ = run(source, Settings(), backend, output=output)
+    export_hashes = fingerprint(output)
+    report = source.parent / "renamed-review"
+    report.mkdir()
+    (report / "plan.json").write_text(json.dumps(result.to_dict()))
+    native_worker = backend.worker
+    def stricter_original_context(action, board, **kwargs):
+        response = native_worker(action, board, **kwargs)
+        if action == "normalize" and board.parent.name == "proposed":
+            # Exercise real KiCad DRC with a stricter original-name context.
+            # No production file or reviewed export is modified by this hook.
+            board.with_suffix(".kicad_dru").write_text('''(version 1)
+(rule "Original-context drill minimum"
+  (condition "A.Type == 'Via' && A.NetName == 'GND'")
+  (constraint hole_size (min 0.4mm)))
+''')
+        return response
+    monkeypatch.setattr(backend, "worker", stricter_original_context)
+    with pytest.raises(BackendError, match="Original-name validation failed"):
+        apply_review(report, backend)
+    assert fingerprint(source) == original
+    assert fingerprint(output) == export_hashes
+    assert not (source.parent / ".kicad-stitch-backups").exists()
+    audit_path, = (report / "apply-validation").glob("*/validation.json")
+    audit = json.loads(audit_path.read_text())
+    assert audit["status"] == "failed"
+    assert audit["blocking_issues"]
+    assert audit["via_count"] == len(result.candidates)
+    assert not audit["changed_candidate_uuids"]
+    assert not list(source.parent.glob(".kicad-stitch-*.lock"))
 
 
 def test_real_board_from_environment():

@@ -71,6 +71,7 @@ kicad-stitch /path/to/board.kicad_pcb \
   --config stitch.toml \
   --report-dir ./stitch-export \
   --output /path/to/board-stitched.kicad_pcb
+kicad-stitch apply ./stitch-export
 ```
 
 **Your original project remains the working project.** The default command saves
@@ -79,13 +80,29 @@ the original basename. This copy is for review. After applying, reopen the
 original `.kicad_pro`; its PCB now contains the stitches. No project switch,
 schematic transfer or manual file renaming is needed.
 
-`apply` installs the exact reviewed PCB rather than replanning or merging into an
-edited board. It checks hashes of the source PCB/project/custom rules and the
+`apply` installs the reviewed vias without replanning or merging into an edited
+board. It checks hashes of the source PCB/project/custom rules and the
 reviewed files against the native validation record. If anything changed, generate
 a new review. Editing or saving the review in KiCad can change its bytes and
 invalidate it. KiCad board/project locks also block replacement: save and close
 the original before generating a review you intend to apply. Close the review
 copy without saving when you finish inspecting it.
+
+Exports using a different basename work with `apply` too. The tool uses the
+original project name and source rules in scratch copies, reruns native refill,
+DRC and ground-connectivity checks, and verifies that the reviewed via UUIDs,
+nets and positions survive. It never drops or relocates vias during apply. New
+blocking issues abort the operation before backup/replacement; annular-width
+advisories follow the original review's settings. Native refill can update copper
+and file serialization under the original context. Checks and the resulting board
+are saved under `REPORT_DIR/apply-validation/TIMESTAMP-ID/`, with a report path
+in the apply receipt. Source and review hash checks still apply. Existing v0.3.0
+reviews have the required metadata and do not need regeneration for this fix.
+
+The runtime for renamed-export validation is detected automatically. Use
+`kicad-stitch apply REPORT_DIR --runtime flatpak` or the native `--kicad-python` /
+`--kicad-cli` overrides if needed. A matching-basename review already has the right
+context and installs the exact validated bytes without another native run.
 
 Before replacing the PCB, the tool stores the original PCB, `.kicad_pro` and optional
 `.kicad_dru` in a unique `.kicad-stitch-backups/TIMESTAMP-ID/` subdirectory next to
@@ -103,10 +120,8 @@ unchanged during restore as well. Backup directories are retained until you
 remove them. Failed backups or replacement checks leave the source PCB intact.
 
 `--output` is an explicit export option, mutually exclusive with `--in-place`.
-Export and report paths must be new. A differently named export cannot be applied
-directly because name-dependent custom rules/text variables were validated under
-that export name; generate the default review to apply to the original. Old
-reports without saved validation hashes also need regeneration once before apply.
+Export and report paths must be new. Old reports without saved validation hashes
+need regeneration once before apply.
 
 The report directory contains:
 
@@ -282,7 +297,9 @@ KiCad adapter. A modified proposal must go through native validation before save
 
 `kicad_stitch.workflow.apply_review(report_path)` and
 `restore_backup(backup_path, force=False)` provide the same guarded apply/restore
-operations for GUI callers. The library transaction's `output=None` remains a
+operations for GUI callers. An optional `backend` argument to `apply_review`
+selects the native adapter for a renamed export's revalidation. The library
+transaction's `output=None` remains a
 read-only validation API; the CLI selects a persistent review path by default.
 
 ## Tests

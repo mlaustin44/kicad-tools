@@ -94,7 +94,7 @@ def main(argv=None):
         if verified:
             if args.in_place:
                 summary["application"] = apply_review(report)
-            elif result.validation["validated_basename"] == Path(result.validation["source_board"]).name:
+            else:
                 summary["apply_command"] = shlex.join(["kicad-stitch", "apply", str(report)])
         print(json.dumps(summary, indent=2))
         return 0 if result.validation["status"] in {"verified", "verified_with_warnings"} else 2
@@ -116,12 +116,21 @@ def workflow_command(argv):
     p.add_argument("path", type=Path, help="Review directory/plan.json" if command == "apply" else "Backup directory/backup.json")
     if command == "restore":
         p.add_argument("--force", action="store_true", help="Restore despite later edits, backing up current files first")
+    else:
+        p.add_argument("--runtime", choices=["auto", "native", "flatpak"], default="auto",
+                       help="KiCad runtime for revalidating a renamed export")
+        p.add_argument("--kicad-python", help="Explicit native KiCad Python interpreter")
+        p.add_argument("--kicad-cli", help="Explicit native kicad-cli executable")
     args = p.parse_args(argv[1:])
     try:
-        result = apply_review(args.path) if command == "apply" else restore_backup(args.path, force=args.force)
+        if command == "apply":
+            print("Applying review; renamed exports receive native validation under the original board name…", file=sys.stderr)
+            result = apply_review(args.path, KiCad(args.runtime, args.kicad_python, args.kicad_cli))
+        else:
+            result = restore_backup(args.path, force=args.force)
         print(json.dumps(result, indent=2))
         return 0
-    except (ValueError, OSError, KeyError, TypeError) as exc:
+    except (BackendError, ValueError, OSError, KeyError, TypeError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
 

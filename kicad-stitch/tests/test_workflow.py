@@ -3,8 +3,9 @@ from pathlib import Path
 
 import pytest
 
-from kicad_stitch.backend import fingerprint
+from kicad_stitch.backend import BackendError, fingerprint
 from kicad_stitch.cli import main
+from kicad_stitch.model import Settings
 from kicad_stitch import workflow
 
 
@@ -238,7 +239,7 @@ def test_restore_uses_the_bytes_it_verified_even_if_backup_changes(review, monke
 @pytest.mark.parametrize("change,message", [
     ({"status": "failed"}, "successfully verified"),
     ({"published_sha256": None}, "changed since validation"),
-    ({"validated_basename": "renamed.kicad_pcb"}, "different board name"),
+    ({"validated_basename": "renamed.kicad_pcb"}, "does not match its native validation"),
     ({"published_board": None}, "no saved board"),
 ])
 def test_invalid_reviews_cannot_be_applied(review, change, message):
@@ -270,3 +271,85 @@ def test_cli_rejects_legacy_report_without_provenance(review, capsys):
     (report / "plan.json").write_text(json.dumps(data))
     assert main(["apply", str(report)]) == 1
     assert "predates apply support" in capsys.readouterr().err
+
+
+def renamed_review(report, proposed):
+    renamed = proposed.with_name("export_stitched.kicad_pcb")
+    for suffix in (".kicad_pcb", ".kicad_pro", ".kicad_dru"):
+        proposed.with_suffix(suffix).rename(renamed.with_suffix(suffix))
+    data = json.loads((report / "plan.json").read_text())
+    data["validation"].update(published_board=str(renamed), published_sha256=fingerprint(renamed),
+                              validated_basename=renamed.name)
+    data.update(candidates=[], parameters={"settings": Settings().to_dict(),
+                                          "reference_ground": {"layer": "B.Cu", "at": [2, 2]}})
+    (report / "plan.json").write_text(json.dumps(data))
+    return renamed
+
+
+def test_renamed_export_is_revalidated_and_restore_uses_actual_installed_bytes(review, monkeypatch):
+    source, report, proposed = review
+    renamed = renamed_review(report, proposed)
+    original = fingerprint(source)
+    export_bytes = renamed.read_bytes()
+    calls = []
+    backend = object()
+    def revalidate(board, content, settings, candidates, reference, selected, audit):
+        assert board == source and content == export_bytes
+        assert selected is backend
+        assert fingerprint(source) == original  # Source untouched during native work.
+        assert not (source.parent / ".kicad-stitch-backups").exists()
+        calls.append(audit)
+        return b"refilled under original name", {"status": "verified", "report": str(audit / "validation.json")}
+    monkeypatch.setattr(workflow, "revalidate_export", revalidate)
+    result = workflow.apply_review(report, backend)
+    assert len(calls) == 1
+    assert result["revalidation"]["status"] == "verified"
+    assert source.read_bytes() == b"refilled under original name"
+    assert renamed.read_bytes() == export_bytes
+    manifest = json.loads((Path(result["backup"]) / "backup.json").read_text())
+    assert manifest["installed_board_sha256"] == workflow.digest(source.read_bytes())
+    workflow.restore_backup(result["backup"])
+    assert fingerprint(source) == original
+
+
+def test_failed_original_name_validation_never_creates_backup_or_changes_source(review, monkeypatch):
+    source, report, proposed = review
+    renamed_review(report, proposed)
+    original = fingerprint(source)
+    def fail(*args):
+        raise BackendError("Original-name validation failed")
+    monkeypatch.setattr(workflow, "revalidate_export", fail)
+    with pytest.raises(BackendError, match="Original-name validation failed"):
+        workflow.apply_review(report)
+    assert fingerprint(source) == original
+    assert not (source.parent / ".kicad-stitch-backups").exists()
+    assert not list(source.parent.glob(".kicad-stitch-*.lock"))
+
+
+def test_renamed_apply_still_rejects_source_and_export_edits_before_native_work(review, monkeypatch):
+    source, report, proposed = review
+    renamed = renamed_review(report, proposed)
+    def unexpected(*args):
+        pytest.fail("Changed files must be rejected before revalidation")
+    monkeypatch.setattr(workflow, "revalidate_export", unexpected)
+    source.write_bytes(b"new user edits")
+    with pytest.raises(ValueError, match="Source.*changed"):
+        workflow.apply_review(report)
+    renamed.write_bytes(b"edited export")
+    with pytest.raises(ValueError, match="Reviewed.*changed"):
+        workflow.apply_review(report)
+
+
+def test_cli_apply_forwards_native_options_and_reports_native_failures(review, monkeypatch, capsys):
+    _, report, proposed = review
+    renamed_review(report, proposed)
+    calls = []
+    def fail(*args):
+        backend = args[-2]
+        calls.append((backend.runtime, backend.python, backend.cli))
+        raise BackendError("Original-name validation failed")
+    monkeypatch.setattr(workflow, "revalidate_export", fail)
+    assert main(["apply", str(report), "--runtime", "native", "--kicad-python", "/test/python",
+                 "--kicad-cli", "/test/kicad-cli"]) == 1
+    assert calls == [("native", ["/test/python"], ["/test/kicad-cli"])]
+    assert "Original-name validation failed" in capsys.readouterr().err
