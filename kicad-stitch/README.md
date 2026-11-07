@@ -82,13 +82,28 @@ The report directory contains:
 Exit codes: `0` native verification passed (possibly with annular-width warning
 advisories); `2` blocking DRC/connectivity issues remain
 and no board was published; `1` input, configuration, runtime or processing error.
-**Verified means no new reported DRC issues and every added via reaches ground on
-at least two layers.** `verified_with_warnings` also permits native annular-width
+**Verified means no new blocking DRC/connectivity regression and every added via
+reaches ground on at least two layers.** Existing unrelated board errors do not
+require cleanup before stitching. `verified_with_warnings` also permits native annular-width
 warnings on generated vias, recorded in `advisory_issues` and the unmodified DRC
 report. Annular-width errors and all other new DRC issues still reject candidates.
 Examine diagnostics for incomplete coverage, unrepairable
 islands and rejected candidates; verification does not establish EMC performance
 or imply that existing DRC errors were fixed.
+
+If verification fails, the CLI includes `failure_reasons`, `blocking_issue_count`,
+native descriptions/items for up to five blocking issues, and
+`unconnected_via_count`. The complete issue details are in `plan.json` under
+`validation.blocking_issue_details`; raw KiCad reports are always preserved.
+
+KiCad can choose a different pair of objects to represent an existing unconnected
+net after refill. Such a changed ratsnest edge is not automatically a new fault.
+For these cases the tool compares native connected-component membership before
+and after: existing connections must all survive, and reported endpoints must
+already have been disconnected. Component merges are allowed; splits remain
+blocking even if the total error count stays the same. Unknown/zone-only endpoints
+are kept blocking when connectivity preservation cannot be proven. Accepted
+endpoint changes are recorded in `validation.unchanged_connectivity_issues`.
 
 ## Placement passes
 

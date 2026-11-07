@@ -1,3 +1,3 @@
 """GUI-independent ground stitching planner and KiCad file adapter."""
 
-__version__ = "0.1.2"
+__version__ = "0.1.3"

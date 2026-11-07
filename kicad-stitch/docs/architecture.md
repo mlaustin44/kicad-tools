@@ -59,7 +59,12 @@ same package version; they are not a separately stabilized file format.
 5. Apply vias to a fresh **baseline** copy with original island-removal policies.
    If publishing, use the requested output basename for native validation too.
 6. Refill, DRC and inspect actual ground contact/connectivity.
-7. Compare issue identities and multiplicities against the baseline. Remove
+7. Compare issue identities and multiplicities against the baseline. For changed
+   `unconnected_items` representatives, query native connectivity on affected
+   nets in both baseline and proposed boards. If every existing connection
+   survives and the endpoints were already disconnected on a net with baseline
+   unconnected errors, retain the raw report and record the edge as an unchanged
+   connectivity issue instead of a regression. Remove
    generated vias implicated by blocking DRC or failed ground contact; remove an
    entire symmetric-return group if either side fails. Repeat up to five native
    evaluations. Record rejected positions and warn of resulting coverage gaps.
@@ -78,11 +83,21 @@ A GUI should keep native validation off its UI thread and expose progress at the
 operation boundaries. Selecting/deselecting proposed vias invalidates previous
 native validation and requires a fresh evaluation.
 
-The native comparison detects new reported errors and warnings rather
-than requiring a completely clean starting board. It also includes unconnected
-items and keeps issue locations/multiplicity, so an equal total count cannot hide
-a changed violation. Project-ignored checks remain ignored; the report preserves
-KiCad's `ignored_checks` metadata for review.
+The native comparison detects regressions rather than requiring a completely
+clean starting board. Ordinary DRC issues retain locations and multiplicity.
+Unconnected report edges can change representatives without an electrical change;
+the additional native comparison uses component membership of stable pre-existing
+non-zone UUIDs. It allows merges and rejects splits, missing items and net
+reassignments, even when total disconnected-component counts remain equal.
+One zone UUID can span multiple islands, so zone UUIDs are not used as vertices
+that would incorrectly join their islands. Unknown or zone-only report endpoints
+remain blocking. Project-ignored checks remain ignored, with `ignored_checks`
+metadata preserved. No raw native report entry is removed or rewritten.
+
+The CLI exposes failure reasons and native blocking descriptions directly, with
+the first five issues in its summary and complete details in the plan. Unrelated
+baseline errors remain available for normal board cleanup, without blocking the
+stitching result solely because native ratsnest representatives changed.
 
 Annular width is deliberately absent from global dimension preflight: the native
 engine honors its effective rules and severity. Retained warning advisories do not

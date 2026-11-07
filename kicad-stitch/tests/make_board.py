@@ -6,7 +6,7 @@ import sys
 import pcbnew as p
 
 
-def create(directory):
+def create(directory, disconnected_signal=False):
     directory = Path(directory)
     directory.mkdir(parents=True, exist_ok=True)
     board = p.BOARD()
@@ -69,6 +69,33 @@ def create(directory):
         track.SetWidth(p.FromMM(0.5))
         track.SetNet(sig)
         board.Add(track)
+    if disconnected_signal:
+        usb = p.NETINFO_ITEM(board, "/USB_D_P")
+        board.Add(usb)
+        for number, x in enumerate((6, 10, 25, 29), 1):
+            part = p.FOOTPRINT(board)
+            part.SetReference("TP_USB" + str(number))
+            part.SetPosition(point(x, 22))
+            pin = p.PAD(part)
+            pin.SetNumber("1")
+            pin.SetAttribute(p.PAD_ATTRIB_SMD)
+            pin.SetShape(p.PAD_SHAPE_CIRCLE)
+            pin.SetPosition(point(x, 22))
+            pin.SetSize(point(1, 1))
+            layers = p.LSET()
+            layers.AddLayer(p.F_Cu)
+            pin.SetLayerSet(layers)
+            pin.SetNet(usb)
+            part.Add(pin)
+            board.Add(part)
+        for start, end in ((6, 10), (25, 29)):
+            trace = p.PCB_TRACK(board)
+            trace.SetStart(point(start, 22))
+            trace.SetEnd(point(end, 22))
+            trace.SetLayer(p.F_Cu)
+            trace.SetWidth(p.FromMM(0.2))
+            trace.SetNet(usb)
+            board.Add(trace)
     path = directory / "sample.kicad_pcb"
     p.SaveBoard(str(path), board)
     path.with_suffix(".kicad_pro").write_text(json.dumps({"meta": {"filename": "sample.kicad_pro", "version": 1},
@@ -78,4 +105,4 @@ def create(directory):
 
 
 if __name__ == "__main__":
-    print(create(sys.argv[1]))
+    print(create(sys.argv[1], "--disconnected-signal" in sys.argv[2:]))

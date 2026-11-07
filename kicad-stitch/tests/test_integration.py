@@ -98,6 +98,111 @@ def test_custom_rules_reject_candidates_and_preserve_source(native_board):
     assert output.with_suffix(".kicad_dru").read_text() == source.with_suffix(".kicad_dru").read_text()
 
 
+def test_changed_ratsnest_representative_does_not_block_existing_usb_error(native_board, monkeypatch):
+    source, backend = native_board
+    backend.command([*backend.python, str(Path(__file__).with_name("make_board.py").resolve()),
+                     str(source.parent), "--disconnected-signal"])
+    original = fingerprint(source)
+    native_drc = backend.drc
+    changed_endpoints = []
+
+    def drc_with_changed_endpoint(board, report):
+        data = native_drc(board, report)
+        if board.parent.name != "proposed":
+            return data
+        groups = backend.worker("connectivity", board, nets=["/USB_D_P"])
+        components = groups["nets"]["/USB_D_P"]
+        assert len(components) == 2
+        assert all(len(component) == 3 for component in components)
+        # Emulate the observed native endpoint re-selection, with the actual
+        # KiCad component database proving the board's USB connectivity is intact.
+        for missing in data["unconnected_items"]:
+            if len(missing.get("items", [])) != 2:
+                continue
+            a = missing["items"][0]
+            if groups["item_nets"].get(a["uuid"]) != "/USB_D_P":
+                continue
+            component = next(c for c in components if a["uuid"] in c)
+            a["uuid"] = next(uid for uid in component if uid != a["uuid"])
+            changed_endpoints.append(a["uuid"])
+        return data
+
+    monkeypatch.setattr(backend, "drc", drc_with_changed_endpoint)
+    output = source.with_name("existing-usb-error-stitched.kicad_pcb")
+    result, _, before, after = run(source, Settings(), backend, output=output)
+    assert changed_endpoints
+    assert before["unconnected_items"]
+    assert result.validation["status"] == "verified"
+    assert result.validation["unchanged_connectivity_issues"]
+    assert result.validation["new_issues"]  # Full raw comparison remains auditable.
+    assert not result.validation["blocking_issues"]
+    assert not result.validation["rejected_candidates"]
+    assert output.is_file()
+    assert result.candidates
+    assert fingerprint(source) == original
+
+
+def test_real_connectivity_split_blocks_even_with_same_error_count(native_board, monkeypatch):
+    source, backend = native_board
+    backend.command([*backend.python, str(Path(__file__).with_name("make_board.py").resolve()),
+                     str(source.parent), "--disconnected-signal"])
+    original = fingerprint(source)
+    script = source.with_name("split_usb.py")
+    script.write_text('''import sys
+import pcbnew as p
+b = p.LoadBoard(sys.argv[1])
+def pt(x, y):
+    return p.VECTOR2I(p.FromMM(x), p.FromMM(y))
+usb = b.GetNetsByName()["/USB_D_P"]
+# Break A--B while joining B to the previously separate C--D component.
+# The final number of disconnected components is still two.
+for t in b.GetTracks():
+    if isinstance(t, p.PCB_VIA):
+        continue
+    if t.GetNetname() == "/USB_D_P" and t.GetStart() == pt(6, 22):
+        t.SetEnd(pt(8, 22))
+for x in (10, 25):
+    v = p.PCB_VIA(b)
+    v.SetPosition(pt(x, 22))
+    v.SetWidth(p.FromMM(0.6))
+    v.SetDrill(p.FromMM(0.3))
+    v.SetViaType(p.VIATYPE_THROUGH)
+    v.SetLayerPair(p.F_Cu, p.B_Cu)
+    v.SetNet(usb)
+    b.Add(v)
+t = p.PCB_TRACK(b)
+t.SetStart(pt(10, 22))
+t.SetEnd(pt(25, 22))
+t.SetWidth(p.FromMM(0.2))
+t.SetLayer(p.B_Cu)
+t.SetNet(usb)
+b.Add(t)
+p.SaveBoard(sys.argv[1], b)
+''')
+    native_worker = backend.worker
+
+    def worker_with_real_split(action, board, **kwargs):
+        result = native_worker(action, board, **kwargs)
+        if action == "place":
+            backend.command([*backend.python, str(script), str(board)])
+        return result
+
+    monkeypatch.setattr(backend, "worker", worker_with_real_split)
+    output = source.with_name("must-not-publish.kicad_pcb")
+    settings = Settings(perimeter=False, grid=False, fingers=False, auto_pairs=False)
+    result, _, before, after = run(source, settings, backend, output=output)
+    assert len(before["unconnected_items"]) == len(after["unconnected_items"])
+    for report in (before, after):
+        usb_errors = [issue for issue in report["unconnected_items"]
+                      if any("[/USB_D_P]" in item["description"] for item in issue["items"])]
+        assert len(usb_errors) == 1
+    assert result.validation["status"] == "failed"
+    assert not result.validation["unchanged_connectivity_issues"]
+    assert any(issue["type"] == "unconnected_items" for issue in result.validation["blocking_issue_details"])
+    assert not output.exists()
+    assert fingerprint(source) == original
+
+
 def test_repeated_run_is_idempotent_and_existing_output_is_protected(native_board):
     source, backend = native_board
     output = source.with_name("stitched.kicad_pcb")

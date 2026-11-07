@@ -152,6 +152,36 @@ def snapshot(board, net):
     return data
 
 
+def connectivity(board, request):
+    """Stable routing-item components, independent of ratsnest endpoint choice.
+
+    Query from non-zone items. One zone UUID can represent disconnected islands,
+    so it must never be used as a common vertex to merge those islands.
+    """
+    if not board.BuildConnectivity():
+        raise ValueError("Could not build native board connectivity")
+    items = list(board.AllConnectedItems())
+    requested_ids = set(request.get("item_uuids", []))
+    nets = set(request.get("nets", []))
+    nets.update(item.GetNetname() for item in items if item.m_Uuid.AsString() in requested_ids)
+    by_id = {item.m_Uuid.AsString(): item for item in items
+             if item.GetNetname() in nets and item.GetNetCode() > 0 and not isinstance(item, p.ZONE)}
+    item_nets = {uid: item.GetNetname() for uid, item in by_id.items()}
+    result = {"nets": {net: [] for net in sorted(nets)}, "item_nets": item_nets}
+    visited = set()
+    conn = board.GetConnectivity()
+    for uid, item in sorted(by_id.items()):
+        if uid in visited:
+            continue
+        net = item.GetNetname()
+        component = {connected.m_Uuid.AsString() for connected in conn.GetConnectedItems(item)
+                     if connected.m_Uuid.AsString() in by_id and connected.GetNetname() == net}
+        component.add(uid)
+        visited.update(component)
+        result["nets"][net].append(sorted(component))
+    return result
+
+
 def main():
     request = json.load(sys.stdin)
     if not p.Version().startswith("10."):
@@ -160,6 +190,8 @@ def main():
     action = request["action"]
     if action == "snapshot":
         result = snapshot(board, request["net"])
+    elif action == "connectivity":
+        result = connectivity(board, request)
     elif action == "retain":
         for zone in board.Zones():
             if zone.GetNetname() == request["net"] and not zone.GetIsRuleArea():

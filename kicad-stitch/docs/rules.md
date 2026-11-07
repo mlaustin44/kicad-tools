@@ -57,6 +57,19 @@ vias remain visible as `advisory_issues`; status is `verified_with_warnings`.
 Errors, warnings on existing items and every other new rule violation remain
 blocking. Strict mode (`false`) rejects new annular-width warnings as well.
 
+### Existing board errors and changed ratsnest endpoints
+
+Baseline errors do not require cleanup before stitching. KiCad's native
+[`GetConnectedItems`](https://docs.kicad.org/doxygen/classCONNECTIVITY__DATA.html)
+API provides the connected routing-item clusters used to distinguish an existing
+disconnection from a different ratsnest representative after refill. For affected
+nets, each original non-zone component must remain contained in one final
+component. This allows repairs that merge components, while catching any lost
+connection even if a separate repair keeps the total component count unchanged.
+Only edges between known endpoints that were already disconnected, on a net with
+baseline unconnected errors, can be accepted this way. Unknown or zone-only
+endpoints are not waived. Raw native DRC reports are retained for audit.
+
 ### Automatic pitch
 
 With board material area `A` in mm², the geometric target is:

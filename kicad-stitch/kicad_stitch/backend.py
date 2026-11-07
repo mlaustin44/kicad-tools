@@ -19,6 +19,7 @@ from .geometry import Connectivity, decode
 from .model import Settings
 from .planner import plan
 from .runtime import RuntimeDiscoveryError, discover_python, probe_python
+from .validation import unchanged_unconnected_issues
 
 
 class BackendError(RuntimeError):
@@ -130,6 +131,18 @@ def drc_issues(report):
                                  for item in issue.get("items", [])))
             records.append((section, issue.get("type"), issue.get("severity"), items))
     return Counter(records)
+
+
+def describe_issues(report, issues):
+    """Attach native descriptions/items to a selected issue Counter."""
+    records, seen = [], set()
+    for section in ("violations", "unconnected_items", "schematic_parity"):
+        for issue in report.get(section, []):
+            for identity in drc_issues({section: [issue]}):
+                if identity in issues and identity not in seen:
+                    records.append({**issue, "section": section, "count": issues[identity]})
+                    seen.add(identity)
+    return records
 
 
 def copy_project(source, directory, name=None):
@@ -244,6 +257,7 @@ def run(source: Path, settings: Settings, backend: KiCad, *, output: Path | None
         snapshot = backend.snapshot(exploratory, settings.net)
         result = plan(snapshot, settings)
         rejected = []
+        stop_reason = None
         for iteration in range(5):
             proposed = copy_project(original, root / "proposed", output.name if output else None)
             ids = backend.worker("place", proposed, net=settings.net, output=str(proposed),
@@ -253,7 +267,17 @@ def run(source: Path, settings: Settings, backend: KiCad, *, output: Path | None
                 candidate.uuid = uid
             final_drc = backend.drc(proposed, root / "final-drc.json")
             new = drc_issues(final_drc) - drc_issues(baseline_drc)
-            blocking, advisory = partition_new_issues(new, ids, settings)
+            changed_edges = [key for key in new if key[0] == "unconnected_items"]
+            unchanged = Counter()
+            if changed_edges:
+                # Ratsnest edges are representatives, not stable electrical
+                # identities. Confirm native component membership before calling
+                # a different representative a newly introduced disconnection.
+                endpoints = sorted({item[0] for key in changed_edges for item in key[3]})
+                before_connections = backend.worker("connectivity", original, item_uuids=endpoints)
+                after_connections = backend.worker("connectivity", proposed, nets=list(before_connections["nets"]))
+                unchanged = unchanged_unconnected_issues(new, baseline_drc, before_connections, after_connections)
+            blocking, advisory = partition_new_issues(new - unchanged, ids, settings)
             failures, missing = final_connectivity(backend.snapshot(proposed, settings.net), result.candidates, settings,
                                                   result.parameters["reference_ground"])
             if not blocking and not failures:
@@ -262,6 +286,7 @@ def run(source: Path, settings: Settings, backend: KiCad, *, output: Path | None
             for identity in blocking:
                 implicated.update(item[0] for item in identity[3] if item[0] in ids)
             if not implicated or iteration == 4:
+                stop_reason = "no_generated_via_implicated" if not implicated else "validation_limit"
                 break
             # Preserve symmetry: discard the signal's return group if either side
             # fails an effective custom rule. No one-sided return gets published.
@@ -279,6 +304,9 @@ def run(source: Path, settings: Settings, backend: KiCad, *, output: Path | None
                 "message": "Native KiCad annular-width warnings retained on generated vias; project rules are unchanged",
                 "radial_width_mm": (settings.diameter_mm - settings.drill_mm) / 2,
                 "diameter_difference_mm": settings.diameter_mm - settings.drill_mm})
+        if unchanged:
+            result.diagnostics.append({"rule": "existing_unconnected_items", "count": sum(unchanged.values()),
+                "message": "Changed ratsnest endpoints describe existing disconnections; native connectivity is preserved"})
         status = "failed" if blocking or failures else ("verified_with_warnings" if advisory else "verified")
         issue_records = lambda issues: [{"identity": identity, "count": count} for identity, count in issues.items()]
         result.validation = {"status": status,
@@ -290,10 +318,13 @@ def run(source: Path, settings: Settings, backend: KiCad, *, output: Path | None
                              "final_issue_count": sum(drc_issues(final_drc).values()),
                              "new_issues": issue_records(new),
                              "blocking_issues": issue_records(blocking),
+                             "blocking_issue_details": describe_issues(final_drc, blocking),
                              "advisory_issues": issue_records(advisory),
+                             "unchanged_connectivity_issues": describe_issues(final_drc, unchanged),
                              "unconnected_candidate_uuids": failures,
                              "rejected_candidates": rejected,
                              "validation_iterations": iteration + 1,
+                             "stop_reason": stop_reason,
                              "remaining_ground_components": missing,
                              "published_board": None}
         if fingerprint(source) != hashes:

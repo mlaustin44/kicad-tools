@@ -26,6 +26,36 @@ def parser():
     return p
 
 
+def build_summary(result, report):
+    validation = result.validation
+    blocking = validation["blocking_issues"]
+    failures = validation["unconnected_candidate_uuids"]
+    count = sum(issue["count"] for issue in blocking)
+    reasons = []
+    if count:
+        reasons.append(f"KiCad reported {count} new blocking DRC issue(s).")
+    if failures:
+        reasons.append(f"{len(failures)} proposed via(s) failed ground connectivity verification.")
+    if validation.get("stop_reason") == "no_generated_via_implicated":
+        reasons.append("Blocking issues reference existing objects or the board; no generated via was identified for removal.")
+    elif validation.get("stop_reason") == "validation_limit":
+        reasons.append("Reached the native validation iteration limit.")
+    details = validation.get("blocking_issue_details", [])
+    return {"status": validation["status"], "vias": len(result.candidates),
+            "runtime": validation["runtime"],
+            "by_rule": dict(Counter(c.rule for c in result.candidates)), "report": str(report),
+            "output": validation["published_board"],
+            "diagnostics": dict(Counter(d["rule"] for d in result.diagnostics)),
+            "rejected_vias": len(validation["rejected_candidates"]),
+            "advisory_issue_count": sum(i["count"] for i in validation["advisory_issues"]),
+            "unchanged_connectivity_issue_count": sum(i["count"] for i in validation.get("unchanged_connectivity_issues", [])),
+            "blocking_issue_count": count,
+            "blocking_issues": details[:5],
+            "additional_blocking_issues": sum(issue.get("count", 1) for issue in details[5:]),
+            "unconnected_via_count": len(failures),
+            "failure_reasons": reasons}
+
+
 def main(argv=None):
     args = parser().parse_args(argv)
     try:
@@ -40,15 +70,7 @@ def main(argv=None):
         for name, data in (("plan.json", result.to_dict()), ("baseline-drc.json", before), ("final-drc.json", after)):
             (report / name).write_text(json.dumps(data, indent=2) + "\n")
         (report / "preview.svg").write_text(svg(snapshot, result, settings))
-        counts = Counter(c.rule for c in result.candidates)
-        summary = {"status": result.validation["status"], "vias": len(result.candidates),
-                   "runtime": result.validation["runtime"],
-                   "by_rule": dict(counts), "report": str(report),
-                   "output": result.validation["published_board"],
-                   "diagnostics": dict(Counter(d["rule"] for d in result.diagnostics)),
-                   "rejected_vias": len(result.validation["rejected_candidates"]),
-                   "advisory_issue_count": sum(i["count"] for i in result.validation["advisory_issues"])}
-        print(json.dumps(summary, indent=2))
+        print(json.dumps(build_summary(result, report), indent=2))
         return 0 if result.validation["status"] in {"verified", "verified_with_warnings"} else 2
     except (BackendError, ValueError, TypeError, OSError) as exc:
         print(f"error: {exc}", file=sys.stderr)
