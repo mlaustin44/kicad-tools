@@ -28,11 +28,14 @@ def svg(snapshot, result, settings):
         paths(obstacle["polygons"], "#ad7dba" if obstacle["kind"] == "keepout" else "#c47d7d", 0.3)
     for fp in snapshot["footprints"]:
         paths(fp["polygons"], "#8190a5", 0.4)
+    generated = {c.uuid for c in result.candidates if c.uuid}
     for via in snapshot["existing_vias"]:
+        if via.get("uuid") in generated:
+            continue
         vx, vy = via["at"]
         parts.append(f'<circle cx="{vx}" cy="{vy}" r="0.2" fill="#aab6c7"><title>Existing via: {escape(via["net"])}</title></circle>')
     for candidate in result.candidates:
-        title = escape(f"{candidate.rule}: {candidate.reason}; {candidate.x}, {candidate.y} mm; {', '.join(candidate.layers)}")
+        title = escape(f"{candidate.rule}: {candidate.reason}; {candidate.x}, {candidate.y} mm; {', '.join(candidate.layers)}; target shift {candidate.displacement_mm:.3f} mm")
         parts.append(f'<circle cx="{candidate.x}" cy="{candidate.y}" r="{settings.diameter_mm/2}" fill="{COLORS[candidate.rule]}"><title>{title}</title></circle>')
         parts.append(f'<circle cx="{candidate.x}" cy="{candidate.y}" r="{settings.drill_mm/2}" fill="#141923"/>')
     for rejected in result.validation.get("rejected_candidates", []):

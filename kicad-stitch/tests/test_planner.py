@@ -205,7 +205,8 @@ def test_frequency_and_rise_time_bound_auto_pitch():
     config = Settings(max_frequency_hz=2.4e9, rise_time_ns=0.1)
     pitch, details = choose_pitch(config, 10000, 1)
     assert details["frequency_hz"] == 5e9
-    assert pitch == pytest.approx(299792458000 / (5e9 * 4.3 ** 0.5 * 20))
+    assert pitch == pytest.approx(299792458000 / (5e9 * 4.3 ** 0.5 * 10))
+    assert details["electrical_pitch_limit_mm"] == pytest.approx(pitch / 2)
     with pytest.raises(ValueError, match="below legal"):
         choose_pitch(Settings(max_frequency_hz=100e9), 10000, 1)
 

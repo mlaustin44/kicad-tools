@@ -20,6 +20,7 @@ from .model import Settings
 from .planner import plan
 from .runtime import RuntimeDiscoveryError, discover_python, probe_python
 from .validation import unchanged_unconnected_issues
+from .quality import island_recovery, placement_quality
 
 
 class BackendError(RuntimeError):
@@ -226,7 +227,7 @@ def final_connectivity(snapshot, candidates, settings, reference=None):
 def run(source: Path, settings: Settings, backend: KiCad, *, output: Path | None = None):
     """Plan and validate in scratch space; publish only if requested and verified.
 
-    Returns (Plan, snapshot, baseline DRC, final DRC). Even a preview is validated
+    Returns (Plan, final snapshot, baseline DRC, final DRC). Even a preview is validated
     by native refill/DRC. New blocking violations prevent publication; permitted
     annular-width warnings remain visible in both native and placement reports.
     """
@@ -278,7 +279,8 @@ def run(source: Path, settings: Settings, backend: KiCad, *, output: Path | None
                 after_connections = backend.worker("connectivity", proposed, nets=list(before_connections["nets"]))
                 unchanged = unchanged_unconnected_issues(new, baseline_drc, before_connections, after_connections)
             blocking, advisory = partition_new_issues(new - unchanged, ids, settings)
-            failures, missing = final_connectivity(backend.snapshot(proposed, settings.net), result.candidates, settings,
+            final_snapshot = backend.snapshot(proposed, settings.net)
+            failures, missing = final_connectivity(final_snapshot, result.candidates, settings,
                                                   result.parameters["reference_ground"])
             if not blocking and not failures:
                 break
@@ -327,6 +329,11 @@ def run(source: Path, settings: Settings, backend: KiCad, *, output: Path | None
                              "stop_reason": stop_reason,
                              "remaining_ground_components": missing,
                              "published_board": None}
+        result.validation["island_recovery"] = island_recovery(snapshot, final_snapshot, settings,
+                                                               result.parameters["reference_ground"])
+        result.validation["placement_quality"] = placement_quality(final_snapshot, settings,
+                                                                    result.parameters["reference_ground"])
+        result.validation["placement_quality"]["relocated_vias"] = sum(c.displacement_mm > 0.01 for c in result.candidates)
         if fingerprint(source) != hashes:
             raise BackendError("Source board or project changed during planning; run again")
         if output is not None and result.validation["status"] in {"verified", "verified_with_warnings"}:
@@ -347,4 +354,4 @@ def run(source: Path, settings: Settings, backend: KiCad, *, output: Path | None
                     path.unlink()
                 raise
             result.validation["published_board"] = str(output)
-        return result, snapshot, baseline_drc, final_drc
+        return result, final_snapshot, baseline_drc, final_drc

@@ -93,7 +93,9 @@ def snapshot(board, net):
                 if zone.GetNetname() == net:
                     data["ground"][name].extend(polys)
                 else:
-                    data["obstacles"].append({"kind": "copper", "polygons": polys})
+                    data["obstacles"].append({"kind": "zone", "polygons": polys,
+                                              "net": zone.GetNetname(), "layer": name,
+                                              "internal": l not in (p.F_Cu, p.B_Cu)})
 
     for fp in board.Footprints():
         # Native hull is independent of reference/value text placement.
@@ -127,7 +129,8 @@ def snapshot(board, net):
                 continue
             name = board.GetLayerName(l)
             touched.append(name)
-            data["obstacles"].append({"kind": "via" if is_via else "copper", "polygons": polys})
+            data["obstacles"].append({"kind": "via" if is_via else "copper", "polygons": polys,
+                                      "net": item_net, "layer": name})
             if item_net == net and not is_via:
                 data["ground"][name].extend(polys)
             elif item_net and not isinstance(item, p.PCB_TRACK):

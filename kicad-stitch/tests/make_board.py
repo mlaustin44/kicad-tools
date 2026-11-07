@@ -6,7 +6,7 @@ import sys
 import pcbnew as p
 
 
-def create(directory, disconnected_signal=False):
+def create(directory, disconnected_signal=False, power_plane=False):
     directory = Path(directory)
     directory.mkdir(parents=True, exist_ok=True)
     board = p.BOARD()
@@ -39,6 +39,21 @@ def create(directory, disconnected_signal=False):
         zone.SetLocalClearance(p.FromMM(0.2))
         zone.SetMinThickness(p.FromMM(0.2))
         zone.SetIslandRemovalMode(p.ISLAND_REMOVAL_MODE_ALWAYS)
+        poly = zone.Outline()
+        poly.NewOutline()
+        for x, y in ((0, 0), (40, 0), (40, 30), (0, 30)):
+            poly.Append(p.FromMM(x), p.FromMM(y))
+        board.Add(zone)
+    if power_plane:
+        power = p.NETINFO_ITEM(board, "+3V3")
+        board.Add(power)
+        zone = p.ZONE(board)
+        zone.SetLayer(p.In2_Cu)
+        zone.SetNet(power)
+        zone.SetAssignedPriority(1)
+        zone.SetLocalClearance(p.FromMM(0.2))
+        zone.SetMinThickness(p.FromMM(0.2))
+        zone.SetIslandRemovalMode(p.ISLAND_REMOVAL_MODE_NEVER)
         poly = zone.Outline()
         poly.NewOutline()
         for x, y in ((0, 0), (40, 0), (40, 30), (0, 30)):
@@ -105,4 +120,4 @@ def create(directory, disconnected_signal=False):
 
 
 if __name__ == "__main__":
-    print(create(sys.argv[1], "--disconnected-signal" in sys.argv[2:]))
+    print(create(sys.argv[1], "--disconnected-signal" in sys.argv[2:], "--power-plane" in sys.argv[2:]))

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import math
+from shapely import maximum_inscribed_circle
 from shapely.geometry import GeometryCollection, Point, Polygon
 from shapely.ops import unary_union
 
@@ -42,6 +43,32 @@ def lattice(area, step, limit):
     for ix in range(x0, x0 + nx):
         for iy in range(y0, y0 + ny):
             point = Point(ix * step, iy * step)
+            if area.covers(point):
+                yield point
+
+
+def widest_point(area, tolerance=0.03):
+    """Use GEOS's maximum-inscribed-circle search, including tiny off-grid sites."""
+    area = unary_union(polygons(area))
+    if area.is_empty:
+        return None
+    circle = maximum_inscribed_circle(area, tolerance=tolerance)
+    return Point(circle.coords[0]) if not circle.is_empty else None
+
+
+def grid_targets(area, pitch, pattern, limit):
+    """Nominal targets cover the outline, including obstructed locations to shift."""
+    if area.is_empty:
+        return
+    minx, miny, maxx, maxy = area.bounds
+    dy = pitch * math.sqrt(3) / 2 if pattern == "staggered" else pitch
+    y0, y1 = math.ceil(miny / dy), math.floor(maxy / dy)
+    if (math.ceil((maxx - minx) / pitch) + 2) * (y1 - y0 + 1) > limit:
+        raise ValueError("Grid targets exceed max_samples; increase pitch or budget")
+    for iy in range(y0, y1 + 1):
+        offset = pitch / 2 if pattern == "staggered" and iy % 2 else 0
+        for ix in range(math.ceil((minx - offset) / pitch), math.floor((maxx - offset) / pitch) + 1):
+            point = Point(ix * pitch + offset, iy * dy)
             if area.covers(point):
                 yield point
 

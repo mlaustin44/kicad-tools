@@ -25,6 +25,8 @@ Settings + snapshot -> planner.plan() -> Plan (positions, reasons, diagnostics)
 - `model.py`: validated configuration, `Candidate`, and versioned `Plan` result.
   Plain dataclasses with JSON-serializable fields. No GUI framework.
 - `geometry.py`: polygon conversion, bounded sampling and cross-layer union-find.
+- `quality.py`: post-validation coverage and island-recovery measurements from
+  the actual normally filled final board, independent of planning success.
 - `planner.py`: pure deterministic engine operating on a JSON-shaped board
   snapshot. No subprocesses, file writes, editor state or presentation policy.
   `plan(snapshot, settings)` is the primary integration point for a GUI overlay.
@@ -76,6 +78,12 @@ same package version; they are not a separately stabilized file format.
 9. Recheck source hashes. If requested and verified, exclusively create new
    project/rules and finally the output board. Existing files are never replaced.
 
+After the last native evaluation, measure actual contour gaps and per-layer legal
+coverage, and intersect original exploratory islands with reference-connected
+final copper. Distinguish island recovery from normal island removal. Previews
+and the transaction's returned snapshot use the final native fill. The source
+exploratory model remains available internally for recovery accounting.
+
 Scratch cleanup is automatic. Publication rolls back files created by the current
 transaction if a write fails. Separate files cannot be published as a single
 filesystem transaction: the board is written last so its rules are already there.
@@ -122,9 +130,20 @@ Only through vias are generated; no blind/microvia stack synthesis, routing of
 unreachable islands, creation of missing ground zones, thermal pad drilling,
 automatic ground-net merging, capacitor-ground optimization or EM solving.
 Signal pairing uses suffix and geometric hints rather than schematic intent.
-RF radiators need explicit exclusions. Finger classification and coverage audits
-are sampled geometric heuristics. Native candidate rejection does not rerun all
-placement passes to prove that no alternative location exists.
+RF radiators need explicit exclusions. Finger classification is a geometric
+heuristic; the continuous coverage calculation uses Euclidean distance and a
+0.1 mm geometric tolerance, not an electromagnetic or path-inductance model.
+Native candidate rejection does not rerun all placement passes to prove that no
+alternative location exists, but final quality is remeasured after rejection.
+Later runs can refine remaining signal/contour gaps after native refill changes
+the available landing geometry; universal rerun idempotence is not guaranteed.
+
+Grid, perimeter, signal and finger targets use independent pitches. Grid targets
+are preferences, not snap constraints: local polygon intersection, spacing-disk
+subtraction and nearest/maximum-clearance sites determine placement. Internal
+power-zone antipads are permitted by default, while outer zones remain excluded.
+Configurable zone policy never overrides rule-area keepouts. Separate metadata
+records target displacement, geometric quality and native verification.
 
 The transaction copies the sibling project and custom-rule files. Custom rules
 depending on unavailable external resources, differing project basenames or live

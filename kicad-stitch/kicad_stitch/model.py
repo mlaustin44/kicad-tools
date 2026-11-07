@@ -47,10 +47,18 @@ class Settings:
     component_clearance_mm: float = 0.25
     min_spacing_mm: float = 1.0
     pitch_mm: float | None = None
+    grid_pitch_mm: float | None = None
+    perimeter_pitch_mm: float | None = None
+    signal_pitch_mm: float | None = None
+    finger_pitch_mm: float | None = None
+    search_radius_mm: float | None = None
+    grid_pattern: str = "staggered"
+    zone_policy: str = "internal_antipads"
     max_frequency_hz: float | None = None
     rise_time_ns: float | None = None
     epsilon_r: float = 4.3
     wavelength_divisor: float = 20.0
+    grid_wavelength_divisor: float = 10.0
     perimeter_offset_mm: float = 1.0
     perimeter: bool = True
     islands: bool = True
@@ -80,12 +88,16 @@ class Settings:
                     raise ValueError(f"{f.name} must be finite and positive")
         if not isinstance(self.net, str) or not self.net:
             raise ValueError("net must be nonempty")
+        if self.grid_pattern not in {"square", "staggered"}:
+            raise ValueError("grid_pattern must be square or staggered")
+        if self.zone_policy not in {"avoid", "internal_antipads", "antipads"}:
+            raise ValueError("zone_policy must be avoid, internal_antipads or antipads")
         if self.drill_mm >= self.diameter_mm:
             raise ValueError("drill_mm must be smaller than diameter_mm")
         for name in ("max_vias", "max_samples"):
             if type(getattr(self, name)) is not int or getattr(self, name) < 1:
                 raise ValueError(f"{name} must be a positive integer")
-        for name in ("epsilon_r", "wavelength_divisor"):
+        for name in ("epsilon_r", "wavelength_divisor", "grid_wavelength_divisor"):
             v = getattr(self, name)
             if not isinstance(v, (float, int)) or isinstance(v, bool) or not math.isfinite(v) or v < 1:
                 raise ValueError(f"{name} must be finite and at least 1")
@@ -136,6 +148,8 @@ class Candidate:
     reason: str
     layers: list[str]
     uuid: str | None = None
+    target: list[float] | None = None
+    displacement_mm: float = 0.0
 
 
 @dataclass

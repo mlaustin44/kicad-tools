@@ -12,7 +12,7 @@ cd kicad-stitch
 uv tool install .
 ```
 
-Requires Python 3.11+ and KiCad **10.x**. The Python package installs Shapely for
+Requires Python 3.11+ and KiCad **10.x**. The Python package installs Shapely 2.1+ for
 geometry operations. KiCad supplies the board reader/writer and authoritative
 refill/DRC engine. No editor window or scripting plugin is needed.
 
@@ -71,6 +71,8 @@ The report directory contains:
   settings/spacing assumptions, rejected candidates, unresolved features, source
   hashes, and validation results. `schema_version` is currently `1`.
 - `preview.svg`: board, overlapping ground copper, components, and colored vias.
+  It uses the actual final filled copper, including power-plane antipads and
+  island removal, rather than the exploratory island-retention fill.
   Hover a via for its reason and coordinates. Colors: orange island repair,
   pink transition return, blue perimeter, red signal fence, yellow finger,
   green grid, white coverage supplement.
@@ -110,20 +112,26 @@ endpoint changes are recorded in `validation.unchanged_connectivity_issues`.
 1. **Island repair:** temporarily retain disconnected ground copper in a scratch
    fill; build a graph of per-layer copper regions joined by plated pads/existing
    vias; add vias where disconnected regions overlap reference-connected copper.
-   Iteration handles chains of overlaps. Normal island filtering is restored by
+   GEOS maximum-inscribed-circle searches solve the actual free landing regions
+   after spacing exclusions; no fixed sampling grid is required. Iteration
+   handles chains of overlaps. Normal island filtering is restored by
    applying the accepted placements to the original board copy and refilling.
 2. **Signal return/fence:** detect paired `_P/_N`, `+/-`, `_DP/_DM` suffixes and
    prioritize symmetric return vias beside paired layer transitions. Set
    `pair_fences = true` for continuous fences, or explicitly select RF feed nets
    and component references in `[[signal]]` entries. Tracks, arcs and net-assigned
    custom pad/shape copper are supported, including footprint-based PCB antennas.
-3. **Perimeter:** inset the actual board outline, including cutouts; distribute
-   targets by arc length and search nearby perimeter stations around obstacles.
+3. **Perimeter:** inset the actual board outline, including cutouts; use a separate
+   edge pitch and distribute targets by arc length. Search continuously along
+   legal contour segments, then within a bounded inward band. Audit and attempt
+   to close actual remaining fence gaps.
 4. **Finger and grid fill:** identify elongated features removed by a configurable
-   morphological opening, stitch legal portions, and fill a board-origin grid.
-   A half-pitch coverage audit supplements sparse areas per contacted layer.
+   morphological opening, prioritize distal tips and require contact with the
+   feature when counting existing stitching. Use square or staggered nominal
+   grid targets, relocating obstructed targets locally. A continuous polygon
+   coverage audit finds off-grid pockets separately on each ground layer.
 
-Every pass avoids existing pads, tracks, vias, holes, non-ground filled zones,
+Every pass avoids existing pads, tracks, vias, holes, protected filled zones,
 component courtyards (or native footprint hulls), rule areas, board edges/cutouts,
 and explicit exclusions. Through vias clear obstacles on **every copper layer**,
 and require full landing copper on at least two layers during planning. Native
@@ -131,6 +139,20 @@ DRC evaluates effective netclass and custom constraints afterward. Offending
 candidates are removed (except permitted annular-width warnings) and the board is
 revalidated, up to five evaluations;
 unattributable new violations fail publication.
+
+`zone_policy = "internal_antipads"` allows through-via clearance holes in internal
+power pours, while retaining outer-layer zone exclusions. Treating every internal
+power fill as immutable would incorrectly prohibit normal ground stitching.
+Choose `"avoid"` to preserve all other-net fills, or `"antipads"` to also allow
+outer-layer zone antipads. Native refill, DRC and connectivity regression checks
+still apply; deliberate keepouts always remain hard exclusions.
+
+DRC acceptance and placement completeness are separate. `validation.placement_quality`
+measures the actual final board, including any rejected candidates: edge gaps,
+per-layer legal coverage and relocated placements. `validation.island_recovery`
+counts regions connected, partially connected, still disconnected or removed by
+the normal fill policy. **Removed copper is never counted as recovered ground.**
+Unresolved diagnostics include landing size/clearance reasons and coordinates.
 
 ## Configuration and electrical assumptions
 
@@ -159,12 +181,23 @@ acceptance from a warning or infer a vendor profile.
 
 ### Spacing and signal selection
 
-Without electrical inputs, automatic pitch targets about 100 board-area cells,
-bounded to 2–10 mm and legal via spacing. This is a density heuristic. Optional
-maximum significant frequency and rise time tighten that pitch using a
-configurable guided-wavelength heuristic; every assumption is recorded.
-Explicit `pitch_mm` overrides geometric density but remains subject to the
-electrical limit. A requested pitch smaller than legal spacing is an error.
+Without electrical inputs, automatic interior pitch targets about 100 board-area
+cells, bounded to 2–10 mm and legal via spacing. The edge target defaults to half
+the interior pitch; signal fencing inherits the edge target, while narrow-feature
+pitch is capped at twice `neck_width_mm`. These are separate geometric density
+heuristics, with `grid_pitch_mm`, `perimeter_pitch_mm`, `signal_pitch_mm`, and
+`finger_pitch_mm` overrides. Legacy `pitch_mm` is the interior target alias.
+
+Maximum significant frequency/rise time optionally apply separate wavelength
+bounds: default λ/10 for interior stitching and λ/20 for fences/edges/fingers.
+Both divisors and the dielectric assumption are configurable and reported. A
+requested pitch below legal spacing is an error. No clock frequency or edge rate
+is inferred from board area or a net name.
+
+`search_radius_mm` bounds local target movement (default: half the interior
+pitch). Contour passes additionally cap movement to half their own pitch. The
+report records each nominal target and its actual displacement, so changing the
+pattern does not conceal why vias moved.
 
 Supply the antenna manufacturer's exclusions before selecting an RF feed for
 fencing. Selecting an antenna net is permission to fence its selected routing;

@@ -9,6 +9,7 @@ import shlex
 import tempfile
 
 import pytest
+from shapely.geometry import Point
 
 from kicad_stitch.backend import KiCad, drc_issues, fingerprint, run
 from kicad_stitch.cli import main
@@ -78,6 +79,26 @@ def test_native_discovery_and_worker_with_real_kicad_launchers(native_board):
     snapshot = backend.snapshot(source, "GND")
     assert snapshot["version"] == installed.check()
     assert decode(snapshot["outline"]).area == pytest.approx(1164)
+
+
+def test_ground_stitches_make_legal_antipads_in_internal_power_plane(native_board):
+    source, backend = native_board
+    backend.command([*backend.python, str(Path(__file__).with_name("make_board.py").resolve()),
+                     str(source.parent), "--power-plane"])
+    original = fingerprint(source)
+    output = source.with_name("power-plane-stitched.kicad_pcb")
+    result, final, before, after = run(source, Settings(), backend, output=output)
+    assert result.validation["status"] == "verified"
+    assert not result.validation["blocking_issues"]
+    assert result.candidates
+    power = decode([poly for obstacle in final["obstacles"]
+                    if obstacle["kind"] == "zone" and obstacle["net"] == "+3V3"
+                    for poly in obstacle["polygons"]])
+    assert power.area > 500
+    for via in result.candidates:
+        assert power.distance(Point(via.x, via.y)) >= 0.49
+    assert output.is_file()
+    assert fingerprint(source) == original
 
 
 def test_custom_rules_reject_candidates_and_preserve_source(native_board):

@@ -53,7 +53,13 @@ def build_summary(result, report):
             "blocking_issues": details[:5],
             "additional_blocking_issues": sum(issue.get("count", 1) for issue in details[5:]),
             "unconnected_via_count": len(failures),
-            "failure_reasons": reasons}
+            "failure_reasons": reasons,
+            "placement_quality": {
+                "relocated_vias": validation.get("placement_quality", {}).get("relocated_vias", 0),
+                "perimeter_gap_count": len(validation.get("placement_quality", {}).get("perimeter_gaps", [])),
+                "coverage_gap_layers": [row["layer"] for row in validation.get("placement_quality", {}).get("coverage", [])
+                                        if row["significant_gap"]],
+                "island_states": validation.get("island_recovery", {}).get("counts", {})}}
 
 
 def main(argv=None):

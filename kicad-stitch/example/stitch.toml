@@ -24,13 +24,24 @@ auto_pairs = true
 pair_fences = false
 signal_offset_mm = 1.0
 
-# Omit pitch for board-size-based density. Frequency/rise time, if supplied, also
-# bound pitch using the wavelength heuristic documented in docs/rules.md.
-# pitch_mm = 3.0
+# Separate density targets. Omitted interior pitch uses board area; omitted edge
+# pitch is half the interior target, never below legal spacing. These defaults
+# are geometric heuristics, not electrical sign-off.
+# grid_pitch_mm = 8.0
+# perimeter_pitch_mm = 4.0
+# signal_pitch_mm = 3.0
+# finger_pitch_mm = 2.0
+# search_radius_mm = 4.0
+grid_pattern = "staggered" # or "square"; either pattern can move around obstacles
+# Internal power planes may form antipads around GND vias during native refill.
+# Outer-layer power/switch-node zones remain protected by default.
+zone_policy = "internal_antipads" # "avoid" protects all zones; "antipads" allows all
+# pitch_mm remains supported as an alias for the interior grid target.
 # max_frequency_hz = 2.4e9
 # rise_time_ns = 0.5
 epsilon_r = 4.3
 wavelength_divisor = 20.0
+grid_wavelength_divisor = 10.0
 
 neck_width_mm = 1.5
 max_vias = 5000
