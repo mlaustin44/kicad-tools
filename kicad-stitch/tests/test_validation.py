@@ -50,9 +50,26 @@ def test_annular_global_minimum_does_not_preempt_native_drc(tmp_path, diameter, 
         check_via_dimensions(Settings(diameter_mm=0.5, drill_mm=0.2), project)
 
 
+def _identity(kind="annular_width", severity="warning", uuids=("generated",), section="violations"):
+    return (section, kind, severity, tuple((uid, 1, 2) for uid in uuids))
+
+
+def test_non_hazard_warnings_are_advisory_and_hazards_always_block():
+    isolated = _identity("isolated_copper", uuids=("existing-zone",))
+    silk = _identity("silk_over_copper")
+    hazards = [_identity("clearance"), _identity("shorting_items", uuids=("existing",)),
+               _identity("unconnected_items", section="unconnected_items"),
+               _identity("isolated_copper", severity="error")]
+    issues = Counter({isolated: 2, silk: 1, **{h: 1 for h in hazards}})
+    blocking, advisory = partition_new_issues(issues, ["generated"], Settings())
+    assert advisory == Counter({isolated: 2, silk: 1})
+    assert blocking == Counter({h: 1 for h in hazards})
+    strict, none = partition_new_issues(issues, ["generated"], Settings(block_new_warnings=True))
+    assert strict == issues and not none
+
+
 def test_only_annular_warnings_on_generated_vias_are_advisory():
-    def identity(kind="annular_width", severity="warning", uuids=("generated",)):
-        return ("violations", kind, severity, tuple((uid, 1, 2) for uid in uuids))
+    identity = _identity
     accepted = identity()
     rejected = [identity(severity="error"), identity(kind="clearance"),
                 identity(uuids=("existing",)), identity(uuids=("generated", "existing")),

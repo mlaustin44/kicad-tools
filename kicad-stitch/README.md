@@ -141,23 +141,29 @@ The report directory contains:
 - `baseline-drc.json` and `final-drc.json`: complete KiCad reports, including
   pre-existing issues.
 
-Exit codes: `0` native verification passed (possibly with annular-width warning
-advisories); `2` blocking DRC/connectivity issues remain
-and no board was published; `1` input, configuration, runtime or processing error.
-**Verified means no new blocking DRC/connectivity regression and every added via
-reaches ground on at least two layers.** Existing unrelated board errors do not
-require cleanup before stitching. `verified_with_warnings` also permits native annular-width
-warnings on generated vias, recorded in `advisory_issues` and the unmodified DRC
-report. Annular-width errors and all other new DRC issues still reject candidates.
-Examine diagnostics for incomplete coverage, unrepairable
-islands and rejected candidates; verification does not establish EMC performance
-or imply that existing DRC errors were fixed.
+Exit codes: `0` native verification passed (possibly with warning advisories);
+`2` blocking DRC/connectivity issues remain; `1` input, configuration, runtime or
+processing error.
 
-If verification fails, the CLI includes `failure_reasons`, `blocking_issue_count`,
-native descriptions/items for up to five blocking issues, and
-`unconnected_via_count`. The complete issue details are in `plan.json` under
-`validation.blocking_issue_details`; raw KiCad reports are always preserved.
-Failed validation never applies a board, including with `--in-place`.
+**Only regressions that can break the board block.** A run fails when KiCad
+reports a new **error**, or a new electrical/fabrication hazard at any severity
+(shorts, clearance, hole/edge clearance, new unconnected items, starved thermals,
+drill/width limits, crossing tracks, etc.; see `HAZARD_TYPES` in `backend.py`),
+or when an added via fails to reach ground on two layers. Other new **warnings**,
+such as `isolated_copper` fragments left by refill, are recorded as advisories
+(`advisory_issues`, with KiCad descriptions in the summary) and the run reports
+`verified_with_warnings`. Set `block_new_warnings = true` for a strict
+no-new-warnings policy. Existing board errors never require cleanup first, and
+unresolvable islands are diagnostics, not failures.
+
+**Work is never withheld.** Even when validation fails, the proposed board is
+saved in `REPORT_DIR/board/` (or `--output`) next to `final-drc.json`, so the
+complaints can be inspected in KiCad. The summary then includes
+`failure_reasons`, up to five blocking issues with native descriptions/items, and
+an `apply_command` using `kicad-stitch apply --force REPORT_DIR`, which installs
+the inspected board anyway (status `applied_unverified`, with the usual backup
+and `restore`). Without `--force`, and with `--in-place`, a failed review is
+never applied.
 
 KiCad can choose a different pair of objects to represent an existing unconnected
 net after refill. Such a changed ratsnest edge is not automatically a new fault.
@@ -197,9 +203,9 @@ component courtyards (or native footprint hulls), rule areas, board edges/cutout
 and explicit exclusions. Through vias clear obstacles on **every copper layer**,
 and require full landing copper on at least two layers during planning. Native
 DRC evaluates effective netclass and custom constraints afterward. Offending
-candidates are removed (except permitted annular-width warnings) and the board is
-revalidated, up to five evaluations;
-unattributable new violations fail publication.
+candidates implicated in blocking issues are removed and the board is
+revalidated, up to five evaluations; unattributable blocking issues fail
+validation (the proposed board is still saved for inspection).
 
 `zone_policy = "internal_antipads"` allows through-via clearance holes in internal
 power pours, while retaining outer-layer zone exclusions. Treating every internal
@@ -232,7 +238,8 @@ with that via diameter allowance.
 Annular width is evaluated by native DRC, including project severity and custom
 rules, rather than rejected against the global project minimum during preflight.
 By default `allow_annular_width_warnings = true` preserves **warning-severity**
-annular issues on generated vias and publishes with `verified_with_warnings`.
+annular issues on generated vias and publishes with `verified_with_warnings`
+(annular warnings involving existing items still block).
 The report includes the radial width and diameter difference. The source and
 published project rules/severities are not changed. Set this option to `false`
 to reject those warnings too. If the project treats annular width as an **error**,

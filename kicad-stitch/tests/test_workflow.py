@@ -183,7 +183,7 @@ def test_tampered_backup_cannot_be_restored(review):
 def test_atomic_replace_failure_leaves_source_intact_and_backup_available(review, monkeypatch):
     source, report, _ = review
     original = fingerprint(source)
-    def fail(*args):
+    def fail(*args, **kwargs):
         raise OSError("simulated replace failure")
     monkeypatch.setattr(workflow.os, "replace", fail)
     with pytest.raises(OSError, match="simulated replace failure"):
@@ -198,7 +198,7 @@ def test_atomic_replace_failure_leaves_source_intact_and_backup_available(review
 def test_backup_write_failure_never_replaces_source(review, monkeypatch):
     source, report, _ = review
     original = fingerprint(source)
-    def fail(*args):
+    def fail(*args, **kwargs):
         raise OSError("simulated backup write failure")
     monkeypatch.setattr(workflow, "write_new", fail)
     with pytest.raises(OSError, match="simulated backup write failure"):
@@ -237,7 +237,7 @@ def test_restore_uses_the_bytes_it_verified_even_if_backup_changes(review, monke
 
 
 @pytest.mark.parametrize("change,message", [
-    ({"status": "failed"}, "successfully verified"),
+    ({"status": "failed"}, "apply --force"),
     ({"published_sha256": None}, "changed since validation"),
     ({"validated_basename": "renamed.kicad_pcb"}, "does not match its native validation"),
     ({"published_board": None}, "no saved board"),
@@ -250,6 +250,19 @@ def test_invalid_reviews_cannot_be_applied(review, change, message):
     with pytest.raises(ValueError, match=message):
         workflow.apply_review(report)
     assert source.read_bytes() == b"original PCB\n"
+
+
+def test_failed_review_applies_only_with_force(review, capsys):
+    source, report, proposed = review
+    data = json.loads((report / "plan.json").read_text())
+    data["validation"].update(status="failed", blocking_issues=[{"identity": [], "count": 1}])
+    (report / "plan.json").write_text(json.dumps(data))
+    assert main(["apply", str(report)]) == 1
+    assert source.read_bytes() == b"original PCB\n"
+    assert main(["apply", "--force", str(report)]) == 0
+    applied = json.loads(capsys.readouterr().out)
+    assert applied["status"] == "applied_unverified"
+    assert source.read_bytes() == proposed.read_bytes()
 
 
 def test_cli_apply_and_restore_print_action_and_backup(review, capsys):
@@ -293,7 +306,7 @@ def test_renamed_export_is_revalidated_and_restore_uses_actual_installed_bytes(r
     export_bytes = renamed.read_bytes()
     calls = []
     backend = object()
-    def revalidate(board, content, settings, candidates, reference, selected, audit):
+    def revalidate(board, content, settings, candidates, reference, selected, audit, force=False):
         assert board == source and content == export_bytes
         assert selected is backend
         assert fingerprint(source) == original  # Source untouched during native work.
@@ -316,7 +329,7 @@ def test_failed_original_name_validation_never_creates_backup_or_changes_source(
     source, report, proposed = review
     renamed_review(report, proposed)
     original = fingerprint(source)
-    def fail(*args):
+    def fail(*args, **kwargs):
         raise BackendError("Original-name validation failed")
     monkeypatch.setattr(workflow, "revalidate_export", fail)
     with pytest.raises(BackendError, match="Original-name validation failed"):
@@ -329,7 +342,7 @@ def test_failed_original_name_validation_never_creates_backup_or_changes_source(
 def test_renamed_apply_still_rejects_source_and_export_edits_before_native_work(review, monkeypatch):
     source, report, proposed = review
     renamed = renamed_review(report, proposed)
-    def unexpected(*args):
+    def unexpected(*args, **kwargs):
         pytest.fail("Changed files must be rejected before revalidation")
     monkeypatch.setattr(workflow, "revalidate_export", unexpected)
     source.write_bytes(b"new user edits")
@@ -344,7 +357,7 @@ def test_cli_apply_forwards_native_options_and_reports_native_failures(review, m
     _, report, proposed = review
     renamed_review(report, proposed)
     calls = []
-    def fail(*args):
+    def fail(*args, **kwargs):
         backend = args[-2]
         calls.append((backend.runtime, backend.python, backend.cli))
         raise BackendError("Original-name validation failed")

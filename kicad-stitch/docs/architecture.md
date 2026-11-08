@@ -79,17 +79,20 @@ same package version; they are not a separately stabilized file format.
    generated vias implicated by blocking DRC or failed ground contact; remove an
    entire symmetric-return group if either side fails. Repeat up to five native
    evaluations. Record rejected positions and warn of resulting coverage gaps.
-8. Fail closed if new issues cannot be attributed or remain after the limit.
-   With `allow_annular_width_warnings`, native annular-width warnings referencing
-   only generated vias are advisories. Keep them in the raw reports and complete
-   `new_issues` list, also classify them as `advisory_issues`, and use
-   `verified_with_warnings`. Annular errors and all other issues remain blocking.
-9. Recheck source hashes. If requested and verified, exclusively create new
+8. Fail if blocking issues cannot be attributed or remain after the limit.
+   Blocking means a new error, or a new `HAZARD_TYPES` electrical/fabrication
+   issue at any severity. Other new warnings (and, with
+   `allow_annular_width_warnings`, annular warnings referencing only generated
+   vias) are kept in the raw reports and `new_issues`, classified as
+   `advisory_issues`, and yield `verified_with_warnings`. `block_new_warnings`
+   makes every new warning blocking.
+9. Recheck source hashes. If requested, exclusively create new
    project/rules and finally the output board. Existing files are never replaced.
    Record the source path, validated basename and SHA-256 hashes of the native
    baseline and validated scratch files, mapped to source and published paths
    respectively. The CLI normally publishes to `REPORT_DIR/board/` using the
-   source basename; `output=None` remains available
+   source basename, whether or not validation passed (a failed board is for
+   inspection; `apply` requires `--force` for it); `output=None` remains available
    for library clients that only need read-only validation.
 
 After the last native evaluation, measure actual contour gaps and per-layer legal

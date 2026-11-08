@@ -122,14 +122,21 @@ def receipt(status, board, backup):
             "restore_command": shlex.join(["kicad-stitch", "restore", str(backup)])}
 
 
-def apply_review(report, backend=None):
-    """Install reviewed vias, revalidating a changed basename when needed."""
+def apply_review(report, backend=None, *, force=False):
+    """Install reviewed vias, revalidating a changed basename when needed.
+
+    ``force`` installs a review whose native validation failed (the user has
+    inspected the issues and accepts them). Integrity checks still apply.
+    """
     report = Path(report).resolve()
     plan_path = report / "plan.json" if report.is_dir() else report
     data = json.loads(plan_path.read_text())
     validation = data["validation"]
-    if validation["status"] not in VERIFIED or validation.get("blocking_issues") or validation.get("unconnected_candidate_uuids"):
-        raise ValueError("Only a successfully verified stitching review can be applied")
+    verified = not (validation["status"] not in VERIFIED or validation.get("blocking_issues")
+                    or validation.get("unconnected_candidate_uuids"))
+    if not verified and not force:
+        raise ValueError("This review failed native validation; inspect its board and final-drc.json, "
+                         "then use `kicad-stitch apply --force` to install it anyway")
     if not all(k in validation for k in ("source_board", "published_sha256", "baseline_sha256", "validated_basename")):
         raise ValueError("This report predates apply support; generate a new review")
     board, expected = board_record(validation)
@@ -171,10 +178,10 @@ def apply_review(report, backend=None):
             audit = plan_path.parent / "apply-validation" / (stamp + "-" + uuid4().hex[:8])
             audit.mkdir(parents=True, exist_ok=False)
             content, revalidation = revalidate_export(board, content, settings, candidates, reference,
-                                                      backend or KiCad(), audit)
+                                                      backend or KiCad(), audit, force=force)
         backup = backup_board(board, expected, digest(content), operation="apply", origin=plan_path)
         replace_board(board, content, expected)
-    result = receipt("applied", board, backup)
+    result = receipt("applied" if verified else "applied_unverified", board, backup)
     if revalidation is not None:
         result["revalidation"] = revalidation
     return result

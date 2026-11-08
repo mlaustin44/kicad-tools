@@ -53,6 +53,7 @@ def build_summary(result, report):
             "diagnostics": dict(Counter(d["rule"] for d in result.diagnostics)),
             "rejected_vias": len(validation["rejected_candidates"]),
             "advisory_issue_count": sum(i["count"] for i in validation["advisory_issues"]),
+            "advisory_issues": validation.get("advisory_issue_details", [])[:5],
             "unchanged_connectivity_issue_count": sum(i["count"] for i in validation.get("unchanged_connectivity_issues", [])),
             "blocking_issue_count": count,
             "blocking_issues": details[:5],
@@ -96,6 +97,10 @@ def main(argv=None):
                 summary["application"] = apply_review(report)
             else:
                 summary["apply_command"] = shlex.join(["kicad-stitch", "apply", str(report)])
+        elif result.validation["published_board"]:
+            summary["inspect"] = ("Proposed board saved for inspection; open it in KiCad and compare "
+                                  "final-drc.json with baseline-drc.json")
+            summary["apply_command"] = shlex.join(["kicad-stitch", "apply", "--force", str(report)])
         print(json.dumps(summary, indent=2))
         return 0 if result.validation["status"] in {"verified", "verified_with_warnings"} else 2
     except (BackendError, ValueError, TypeError, OSError) as exc:
@@ -117,6 +122,8 @@ def workflow_command(argv):
     if command == "restore":
         p.add_argument("--force", action="store_true", help="Restore despite later edits, backing up current files first")
     else:
+        p.add_argument("--force", action="store_true",
+                       help="Apply a review that failed native validation (after inspecting it)")
         p.add_argument("--runtime", choices=["auto", "native", "flatpak"], default="auto",
                        help="KiCad runtime for revalidating a renamed export")
         p.add_argument("--kicad-python", help="Explicit native KiCad Python interpreter")
@@ -125,7 +132,8 @@ def workflow_command(argv):
     try:
         if command == "apply":
             print("Applying review; renamed exports receive native validation under the original board name…", file=sys.stderr)
-            result = apply_review(args.path, KiCad(args.runtime, args.kicad_python, args.kicad_cli))
+            result = apply_review(args.path, KiCad(args.runtime, args.kicad_python, args.kicad_cli),
+                                  force=args.force)
         else:
             result = restore_backup(args.path, force=args.force)
         print(json.dumps(result, indent=2))

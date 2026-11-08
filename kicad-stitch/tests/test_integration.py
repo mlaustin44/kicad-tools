@@ -210,7 +210,7 @@ p.SaveBoard(sys.argv[1], b)
         return result
 
     monkeypatch.setattr(backend, "worker", worker_with_real_split)
-    output = source.with_name("must-not-publish.kicad_pcb")
+    output = source.with_name("failed-for-inspection.kicad_pcb")
     settings = Settings(perimeter=False, grid=False, fingers=False, auto_pairs=False)
     result, _, before, after = run(source, settings, backend, output=output)
     assert len(before["unconnected_items"]) == len(after["unconnected_items"])
@@ -221,7 +221,8 @@ p.SaveBoard(sys.argv[1], b)
     assert result.validation["status"] == "failed"
     assert not result.validation["unchanged_connectivity_issues"]
     assert any(issue["type"] == "unconnected_items" for issue in result.validation["blocking_issue_details"])
-    assert not output.exists()
+    # The failed proposal is saved for inspection, never applied to the source.
+    assert output.exists() and result.validation["published_board"] == str(output)
     assert fingerprint(source) == original
 
 

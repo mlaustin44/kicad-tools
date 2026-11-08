@@ -175,22 +175,39 @@ def check_via_dimensions(settings, project):
             raise ValueError(f"Configured {name} {actual} mm is below project minimum {minimum} mm")
 
 
-def partition_new_issues(new, candidate_ids, settings):
-    """Keep only annular-width warnings on generated vias as advisories.
+# Rule types whose new occurrences can make the assembled board not work or not
+# be manufacturable. They block even when a project downgrades them to warnings.
+HAZARD_TYPES = frozenset({
+    "unconnected_items", "shorting_items", "clearance", "hole_clearance",
+    "copper_edge_clearance", "tracks_crossing", "items_not_allowed",
+    "starved_thermal", "connection_width", "hole_to_hole", "holes_co_located",
+    "drill_out_of_range", "microvia_drill_out_of_range", "via_diameter",
+    "track_width", "zones_intersect", "net_conflict", "padstack",
+    "malformed_courtyard", "invalid_outline",
+})
 
-    Never waive annular errors, violations on pre-existing items, or other rule
-    types. Raw KiCad reports and the complete new-issue list remain unchanged.
+
+def partition_new_issues(new, candidate_ids, settings):
+    """Split new native issues into blocking regressions and advisories.
+
+    Blocking: every error-severity issue and every electrical/fabrication hazard
+    (``HAZARD_TYPES``) at any severity. Other warnings, such as isolated copper
+    fragments left by refill, are advisories unless ``block_new_warnings`` is set.
+    Annular-width warnings stay advisory only on generated vias, and only while
+    ``allow_annular_width_warnings`` is true. Raw KiCad reports are unchanged.
     """
     blocking, advisory = Counter(), Counter()
     candidate_ids = set(candidate_ids)
     for identity, count in new.items():
         section, kind, severity, items = identity
-        if (settings.allow_annular_width_warnings and section == "violations"
-                and kind == "annular_width" and severity == "warning" and items
-                and all(item[0] in candidate_ids for item in items)):
-            advisory[identity] = count
+        if severity != "warning" or kind in HAZARD_TYPES:
+            ok = False
+        elif kind == "annular_width":
+            ok = (settings.allow_annular_width_warnings and section == "violations" and bool(items)
+                  and all(item[0] in candidate_ids for item in items))
         else:
-            blocking[identity] = count
+            ok = not settings.block_new_warnings
+        (advisory if ok else blocking)[identity] = count
     return blocking, advisory
 
 
@@ -237,7 +254,7 @@ def final_connectivity(snapshot, candidates, settings, reference=None):
                       for i in graph.missing()]
 
 
-def revalidate_export(source, content, settings, candidates, reference, backend, audit):
+def revalidate_export(source, content, settings, candidates, reference, backend, audit, *, force=False):
     """Refill/check existing reviewed vias under the original project basename.
 
     Never plan, add or remove a via. Preserve native artifacts for review even
@@ -280,6 +297,7 @@ def revalidate_export(source, content, settings, candidates, reference, backend,
                         "new_issues": records(new), "blocking_issues": records(blocking),
                         "blocking_issue_details": describe_issues(after, blocking),
                         "advisory_issues": records(advisory),
+                        "advisory_issue_details": describe_issues(after, advisory),
                         "unchanged_connectivity_issues": describe_issues(after, unchanged),
                         "unconnected_candidate_uuids": failures, "remaining_ground_components": missing,
                         "proposed_board": str(saved), "validated_sha256": {
@@ -287,7 +305,7 @@ def revalidate_export(source, content, settings, candidates, reference, backend,
                             for path, value in fingerprint(proposed).items()}}
         report = audit / "validation.json"
         report.write_text(json.dumps(verification, indent=2) + "\n")
-        if status == "failed":
+        if status == "failed" and not force:
             details = "; ".join(issue.get("description", issue.get("type", "DRC violation"))
                                 for issue in verification["blocking_issue_details"][:3])
             if failures or changed_vias:
@@ -300,8 +318,8 @@ def run(source: Path, settings: Settings, backend: KiCad, *, output: Path | None
     """Plan and validate in scratch space; publish only if requested and verified.
 
     Returns (Plan, final snapshot, baseline DRC, final DRC). Even a preview is validated
-    by native refill/DRC. New blocking violations prevent publication; permitted
-    annular-width warnings remain visible in both native and placement reports.
+    by native refill/DRC. New errors and electrical hazards prevent publication;
+    other new warnings are advisories, visible in native and placement reports.
     """
     source = source.resolve()
     if source.suffix != ".kicad_pcb" or not source.is_file():
@@ -364,11 +382,18 @@ def run(source: Path, settings: Settings, backend: KiCad, *, output: Path | None
         if rejected:
             result.diagnostics.append({"rule": "native_rejections", "count": len(rejected),
                 "message": "Candidates removed after native DRC/connectivity; resulting coverage may have gaps"})
-        if advisory:
-            result.diagnostics.append({"rule": "annular_width_warning", "count": sum(advisory.values()),
+        annular = sum(n for key, n in advisory.items() if key[1] == "annular_width")
+        if annular:
+            result.diagnostics.append({"rule": "annular_width_warning", "count": annular,
                 "message": "Native KiCad annular-width warnings retained on generated vias; project rules are unchanged",
                 "radial_width_mm": (settings.diameter_mm - settings.drill_mm) / 2,
                 "diameter_difference_mm": settings.diameter_mm - settings.drill_mm})
+        other = Counter(key[1] for key in advisory if key[1] != "annular_width")
+        if other:
+            result.diagnostics.append({"rule": "new_drc_warning", "count": sum(other.values()),
+                "types": dict(other),
+                "message": "New non-hazard KiCad warnings (e.g. isolated copper) are reported, not blocking; "
+                           "see validation.advisory_issue_details"})
         if unchanged:
             result.diagnostics.append({"rule": "existing_unconnected_items", "count": sum(unchanged.values()),
                 "message": "Changed ratsnest endpoints describe existing disconnections; native connectivity is preserved"})
@@ -390,6 +415,7 @@ def run(source: Path, settings: Settings, backend: KiCad, *, output: Path | None
                              "blocking_issues": issue_records(blocking),
                              "blocking_issue_details": describe_issues(final_drc, blocking),
                              "advisory_issues": issue_records(advisory),
+                             "advisory_issue_details": describe_issues(final_drc, advisory),
                              "unchanged_connectivity_issues": describe_issues(final_drc, unchanged),
                              "unconnected_candidate_uuids": failures,
                              "rejected_candidates": rejected,
@@ -404,7 +430,10 @@ def run(source: Path, settings: Settings, backend: KiCad, *, output: Path | None
         result.validation["placement_quality"]["relocated_vias"] = sum(c.displacement_mm > 0.01 for c in result.candidates)
         if fingerprint(source) != hashes:
             raise BackendError("Source board or project changed during planning; run again")
-        if output is not None and result.validation["status"] in {"verified", "verified_with_warnings"}:
+        # Always save the proposed board, even when validation failed, so the
+        # complaints in final-drc.json can be inspected in KiCad. Status records
+        # whether it verified; apply refuses failed reviews unless forced.
+        if output is not None:
             output.parent.mkdir(parents=True, exist_ok=True)
             published = []
             try:

@@ -8,6 +8,10 @@ drill_mm = 0.3
 # issues on generated vias visible without rejecting the via. Errors still block.
 # Set false to enforce a no-new-warnings policy for annular width as well.
 allow_annular_width_warnings = true
+# New errors and electrical hazards (shorts, clearance, new unconnected items...)
+# always block. Other new KiCad warnings, e.g. isolated copper fragments left by
+# refill, are reported as advisories. Set true to block every new warning.
+block_new_warnings = false
 clearance_mm = 0.2
 edge_clearance_mm = 0.3
 component_clearance_mm = 0.25
